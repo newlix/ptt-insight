@@ -191,6 +191,7 @@ export class InsightWorker {
     try {
       result = await analyze(this.opts.client, a, this.opts.model, signal);
     } catch (e) {
+      if (signal.aborted) return; // shutdown — not a real failure, don't mark
       if (e instanceof ContentFilterError) {
         console.warn(`content filter blocked, deferring to fallback (article_id=${a.id} has_fallback=${this.opts.fallback !== undefined})`);
         markInsightError(this.opts.db, a.id, "content_filter");

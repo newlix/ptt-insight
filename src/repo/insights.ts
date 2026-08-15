@@ -47,6 +47,10 @@ function loadPending(db: DB, sql: string, ...params: (string | number)[]): Pendi
   }));
 }
 
+// Transient errors (429/network/parse) are retried after this cooldown;
+// content_filter is excluded (handled by the fallback loop instead).
+const RETRY_ERROR_COOLDOWN_SECS = 3600;
+
 export function claimPendingArticles(db: DB, limit: number, minNet: number): PendingArticle[] {
   return loadPending(
     db,
@@ -57,10 +61,14 @@ export function claimPendingArticles(db: DB, limit: number, minNet: number): Pen
        AND a.content IS NOT NULL
        AND length(a.content) > 20
        AND COALESCE(a.net_count, 0) >= ?
-       AND ai.id IS NULL
+       AND (
+         ai.id IS NULL
+         OR (ai.error IS NOT NULL AND ai.error != 'content_filter' AND ai.generated_at < ?)
+       )
      ORDER BY a.net_count DESC, a.posted_at DESC
      LIMIT ?`,
     minNet,
+    nowSecs() - RETRY_ERROR_COOLDOWN_SECS,
     limit,
   );
 }

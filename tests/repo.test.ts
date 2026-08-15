@@ -112,6 +112,32 @@ test("markInsightError + filtered reclaim + fallback store", () => {
   expect(insightStats(db).analyzed).toBe(1); // error cleared
 });
 
+test("transient insight errors retry after cooldown; fresh ones don't", () => {
+  const db = seedDB();
+  db.prepare(`INSERT INTO boards (id, name) VALUES (1, 'Test')`).run();
+  const a1 = insertArticle(db, "M.1.A.R429", "x".repeat(50), 90);
+  const a2 = insertArticle(db, "M.2.A.NET", "x".repeat(50), 80);
+
+  markInsightError(db, a1, "llm status 429: rate limited");
+  markInsightError(db, a2, "network down");
+
+  // fresh errors (< 1h): not claimed
+  expect(claimPendingArticles(db, 10, 20)).toEqual([]);
+
+  // a1's error ages past the cooldown → retried; a2's stays fresh
+  db.prepare(`UPDATE article_insights SET generated_at = ? WHERE article_id = ?`).run(Math.floor(Date.now() / 1000) - 3700, a1);
+  const claimed = claimPendingArticles(db, 10, 20);
+  expect(claimed.map((p) => p.id)).toEqual([a1]);
+
+  // a successful store during retry clears the error permanently
+  storeInsight(db, {
+    articleId: a1, tldr: "recovered", communityTake: "", topComments: "",
+    sentiment: "中立", controversy: "低", tags: [], model: "m",
+    promptTokens: 1, completionTokens: 1,
+  });
+  expect(claimPendingArticles(db, 10, 20)).toEqual([]);
+});
+
 test("boards: list + get with article counts", () => {
   const db = seedDB();
   db.prepare(`INSERT INTO boards (id, name, title, user_count) VALUES (1, 'A', '◎A', 100)`).run();
