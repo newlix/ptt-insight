@@ -11,30 +11,9 @@ import {
   type InsightResult,
 } from "../src/repo/insights.ts";
 
-// Seed a minimal crawler-schema DB (boards/articles/pushes from the crawler's
-// 0001_init migration shape — we create just the columns insight queries touch).
+// Fresh DB with the full merged schema (0001 crawler + 0002 insights).
 function seedDB() {
   const db = openMemoryDB();
-  db.exec(`
-    CREATE TABLE boards (id INTEGER PRIMARY KEY, name TEXT UNIQUE, title TEXT, user_count INTEGER);
-    CREATE TABLE articles (
-      id INTEGER PRIMARY KEY,
-      board_id INTEGER REFERENCES boards(id),
-      url_id TEXT,
-      url_timestamp INTEGER,
-      posted_at INTEGER,
-      title TEXT, author TEXT, content TEXT, ip TEXT, mark TEXT,
-      nrec_raw TEXT, push_count INTEGER, boo_count INTEGER, neutral_count INTEGER, net_count INTEGER,
-      first_seen_at INTEGER, last_fetched_at INTEGER, deleted_at INTEGER,
-      UNIQUE(board_id, url_id)
-    );
-    CREATE TABLE pushes (
-      id INTEGER PRIMARY KEY,
-      article_id INTEGER REFERENCES articles(id),
-      seq INTEGER, tag TEXT, user_id TEXT, content TEXT, ipdatetime TEXT,
-      UNIQUE(article_id, seq)
-    );
-  `);
   migrate(db); // adds article_insights
   return db;
 }

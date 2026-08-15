@@ -98,14 +98,8 @@ test("analyze end-to-end with stub LLM", async () => {
 
 test("insight writes through storeInsight (worker happy path, in-memory)", async () => {
   const db = openMemoryDB();
-  db.exec(`
-    CREATE TABLE articles (
-      id INTEGER PRIMARY KEY, board_id INTEGER, url_id TEXT, url_timestamp INTEGER, posted_at INTEGER,
-      title TEXT, author TEXT, content TEXT, ip TEXT, mark TEXT,
-      nrec_raw TEXT, push_count INTEGER, boo_count INTEGER, neutral_count INTEGER, net_count INTEGER,
-      first_seen_at INTEGER, last_fetched_at INTEGER, deleted_at INTEGER, UNIQUE(board_id, url_id));
-    CREATE TABLE pushes (id INTEGER PRIMARY KEY, article_id INTEGER, seq INTEGER, tag TEXT, user_id TEXT, content TEXT, ipdatetime TEXT, UNIQUE(article_id, seq));`);
   migrate(db);
+  db.prepare(`INSERT INTO boards (id, name) VALUES (1, 'Test')`).run();
   db.prepare(`INSERT INTO articles (board_id, url_id, content, net_count) VALUES (1, ?, ?, 99)`).run("M.1.A.X", "x".repeat(30));
 
   const client = new LLMClient(`http://localhost:${stubLLM.port}`, "", "stub-model");

@@ -2,26 +2,35 @@ import { Database } from "bun:sqlite";
 
 export type DB = Database;
 
-// The crawler owns ptt.db and runs with WAL — this app opens the same file
-// read-mostly (articles/pushes/boards) and writes only its own tables
-// (article_insights). WAL allows one writer + N readers across processes;
-// busy_timeout absorbs brief writer contention with the crawler.
+// Open the SQLite database with the pragmas the crawler depends on.
+// - WAL: concurrent readers during long writes, better crash safety
+//   (also allows an external reader process while this app writes)
+// - busy_timeout: tolerate brief writer contention
+// - foreign_keys: enforce FK constraints (OFF by default in SQLite)
 export function openDB(path: string): DB {
   const db = new Database(path);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA synchronous = NORMAL");
-  db.exec("PRAGMA busy_timeout = 10000");
+  db.exec("PRAGMA busy_timeout = 5000");
   db.exec("PRAGMA foreign_keys = ON");
   return db;
 }
 
-// Isolated in-memory database for tests.
+// Open an isolated in-memory database (used by tests).
 export function openMemoryDB(): DB {
   const db = new Database(":memory:");
   db.exec("PRAGMA foreign_keys = ON");
   return db;
 }
 
+// All timestamps are Unix epoch SECONDS (INTEGER columns) — the same unit as
+// url_timestamp from PTT URLs, window_floor, and backfill_meta.value.
+// One unit everywhere; convert to Date only for display: new Date(secs * 1000).
 export function nowSecs(): number {
   return Math.floor(Date.now() / 1000);
+}
+
+// Epoch seconds `secs` seconds from now.
+export function secsAfter(secs: number): number {
+  return nowSecs() + secs;
 }

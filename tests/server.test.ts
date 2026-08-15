@@ -4,32 +4,13 @@ import { join } from "node:path";
 import { openMemoryDB } from "../src/db/sqlite.ts";
 import { migrate } from "../src/db/migrate.ts";
 import { createServer } from "../src/server/server.ts";
-import { HotBoardsCache } from "../src/ptt/hotboards.ts";
+import { HotBoardsCache } from "../src/crawler/ptt/hotboards.ts";
 import type { DB } from "../src/db/sqlite.ts";
 
 const FIXTURE = join(import.meta.dir, "../testdata/hotboards.html");
 
 function seedDB(): DB {
   const db = openMemoryDB();
-  db.exec(`
-    CREATE TABLE boards (id INTEGER PRIMARY KEY, name TEXT UNIQUE, title TEXT, user_count INTEGER);
-    CREATE TABLE articles (
-      id INTEGER PRIMARY KEY,
-      board_id INTEGER REFERENCES boards(id),
-      url_id TEXT,
-      url_timestamp INTEGER, posted_at INTEGER,
-      title TEXT, author TEXT, content TEXT, ip TEXT, mark TEXT,
-      nrec_raw TEXT, push_count INTEGER, boo_count INTEGER, neutral_count INTEGER, net_count INTEGER,
-      first_seen_at INTEGER, last_fetched_at INTEGER, deleted_at INTEGER,
-      UNIQUE(board_id, url_id)
-    );
-    CREATE TABLE pushes (
-      id INTEGER PRIMARY KEY,
-      article_id INTEGER REFERENCES articles(id),
-      seq INTEGER, tag TEXT, user_id TEXT, content TEXT, ipdatetime TEXT,
-      UNIQUE(article_id, seq)
-    );
-  `);
   migrate(db);
 
   db.prepare(`INSERT INTO boards (id, name, title, user_count) VALUES (1, 'TestBoard', '◎測試', 10)`).run();

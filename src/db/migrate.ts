@@ -4,10 +4,8 @@ import type { DB } from "./sqlite.ts";
 
 const MIGRATIONS_DIR = join(import.meta.dir, "migrations");
 
-// Apply pending ptt-insight migrations. Shares the schema_migrations table
-// with the crawler (disjoint file names, e.g. 0001_insights.sql vs the
-// crawler's 0001_init.sql — neither sees the other's rows as its own).
-// Idempotent — safe on every startup, even while the crawler is running.
+// Apply pending migrations from src/db/migrations/*.sql, tracked in
+// schema_migrations. Idempotent — safe to call on every startup.
 export function migrate(db: DB): void {
   db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
     name TEXT PRIMARY KEY,
@@ -27,9 +25,8 @@ export function migrate(db: DB): void {
     const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf-8");
     const run = db.transaction(() => {
       db.exec(sql);
-      db.prepare("INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)").run(file);
+      db.prepare("INSERT INTO schema_migrations (name) VALUES (?)").run(file);
     });
     run();
-    console.log(`applied migration ${file}`);
   }
 }

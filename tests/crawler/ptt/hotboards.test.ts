@@ -1,9 +1,9 @@
 import { test, expect, afterAll } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseHotBoards, fetchHotBoards, HotBoardsCache, type HotBoard } from "../src/ptt/hotboards.ts";
+import { parseHotBoards, fetchHotBoards, HotBoardsCache, type HotBoard } from "../../../src/crawler/ptt/hotboards.ts";
 
-const FIXTURE = join(import.meta.dir, "../testdata/hotboards.html");
+const FIXTURE = join(import.meta.dir, "../../../testdata/hotboards.html");
 
 const servers: ReturnType<typeof Bun.serve>[] = [];
 afterAll(() => {

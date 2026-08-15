@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { DB } from "../db/sqlite.ts";
 import * as repo from "../repo/articles.ts";
 import { insightStats } from "../repo/insights.ts";
-import type { HotBoardsCache } from "../ptt/hotboards.ts";
+import type { HotBoardsCache } from "../crawler/ptt/hotboards.ts";
 import { parseIndexSlug, totalPages } from "../views/helpers.ts";
 import { hotBoardsPage, boardNotCollectedPage } from "../views/ptt.ts";
 import { pttBoardPage } from "../views/board.ts";

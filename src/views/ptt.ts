@@ -1,4 +1,4 @@
-import type { HotBoard } from "../ptt/hotboards.ts";
+import type { HotBoard } from "../crawler/ptt/hotboards.ts";
 import { esc, nuserColor } from "./helpers.ts";
 
 // PTT-official-website-clone layout (black background, fixed top bar).
