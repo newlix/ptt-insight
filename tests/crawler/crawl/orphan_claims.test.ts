@@ -4,7 +4,7 @@ import {
   pathServer,
   type TestEnv,
 } from "./testutil.ts";
-import { runBackfillWorker, releaseOrphanedClaims } from "../../src/crawler/crawl/backfill.ts";
+import { runBackfillWorker, releaseOrphanedClaims } from "../../../src/crawler/crawl/backfill.ts";
 
 const envs: TestEnv[] = [];
 afterEach(() => {
