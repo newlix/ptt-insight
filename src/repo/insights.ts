@@ -1,0 +1,140 @@
+import type { DB } from "../db/sqlite.ts";
+import { nowSecs } from "../db/sqlite.ts";
+import { parseTags, type Push } from "./articles.ts";
+
+export interface InsightResult {
+  articleId: number;
+  tldr: string;
+  communityTake: string;
+  topComments: string;
+  sentiment: string;
+  controversy: string;
+  tags: string[];
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+}
+
+export interface PendingArticle {
+  id: number;
+  boardId: number;
+  title: string | null;
+  author: string | null;
+  content: string | null;
+  netCount: number | null;
+  pushes: Push[];
+}
+
+function getPushes(db: DB, articleId: number): Push[] {
+  const rows = db
+    .prepare(`SELECT seq, tag, user_id, content FROM pushes WHERE article_id = ? ORDER BY seq`)
+    .all(articleId) as { seq: number; tag: string; user_id: string; content: string | null }[];
+  return rows.map((p) => ({ seq: p.seq, tag: p.tag, userId: p.user_id, content: p.content, ipDatetime: null }));
+}
+
+function loadPending(db: DB, sql: string, ...params: (string | number)[]): PendingArticle[] {
+  const rows = db
+    .prepare(sql)
+    .all(...params) as { id: number; board_id: number; title: string | null; author: string | null; content: string | null; net_count: number | null }[];
+  return rows.map((r) => ({
+    id: r.id,
+    boardId: r.board_id,
+    title: r.title,
+    author: r.author,
+    content: r.content,
+    netCount: r.net_count,
+    pushes: getPushes(db, r.id),
+  }));
+}
+
+export function claimPendingArticles(db: DB, limit: number, minNet: number): PendingArticle[] {
+  return loadPending(
+    db,
+    `SELECT a.id, a.board_id, a.title, a.author, a.content, a.net_count
+     FROM articles a
+     LEFT JOIN article_insights ai ON ai.article_id = a.id
+     WHERE a.deleted_at IS NULL
+       AND a.content IS NOT NULL
+       AND length(a.content) > 20
+       AND COALESCE(a.net_count, 0) >= ?
+       AND ai.id IS NULL
+     ORDER BY a.net_count DESC, a.posted_at DESC
+     LIMIT ?`,
+    minNet,
+    limit,
+  );
+}
+
+// Articles whose primary-provider analysis was blocked by content filter
+// (ai.error = 'content_filter'), for retry with a fallback provider.
+export function claimFilteredArticles(db: DB, limit: number): PendingArticle[] {
+  return loadPending(
+    db,
+    `SELECT a.id, a.board_id, a.title, a.author, a.content, a.net_count
+     FROM articles a
+     JOIN article_insights ai ON ai.article_id = a.id
+     WHERE ai.error = 'content_filter'
+     ORDER BY a.net_count DESC
+     LIMIT ?`,
+    limit,
+  );
+}
+
+export function storeInsight(db: DB, r: InsightResult): void {
+  db.prepare(
+    `INSERT INTO article_insights
+       (article_id, tldr, community_take, top_comments, sentiment, controversy, tags, model, prompt_tokens, completion_tokens)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (article_id) DO UPDATE SET
+       tldr              = excluded.tldr,
+       community_take    = excluded.community_take,
+       top_comments      = excluded.top_comments,
+       sentiment         = excluded.sentiment,
+       controversy       = excluded.controversy,
+       tags              = excluded.tags,
+       model             = excluded.model,
+       prompt_tokens     = excluded.prompt_tokens,
+       completion_tokens = excluded.completion_tokens,
+       generated_at      = unixepoch(),
+       error             = NULL`,
+  ).run(
+    r.articleId,
+    r.tldr,
+    r.communityTake,
+    r.topComments,
+    r.sentiment,
+    r.controversy,
+    JSON.stringify(r.tags),
+    r.model,
+    r.promptTokens,
+    r.completionTokens,
+  );
+}
+
+export function markInsightError(db: DB, articleId: number, errMsg: string): void {
+  db.prepare(
+    `INSERT INTO article_insights (article_id, tldr, model, error)
+     VALUES (?, '(分析失敗)', 'error', ?)
+     ON CONFLICT (article_id) DO UPDATE SET error = excluded.error, generated_at = ?`,
+  ).run(articleId, errMsg, nowSecs());
+}
+
+export function insightStats(db: DB): { analyzed: number; total: number } {
+  const row = db
+    .prepare(
+      `SELECT
+         (SELECT count(*) FROM article_insights WHERE error IS NULL) AS analyzed,
+         (SELECT count(*) FROM articles
+          WHERE deleted_at IS NULL AND content IS NOT NULL AND length(content) > 20
+            AND COALESCE(net_count, 0) >= 20) AS total`,
+    )
+    .get() as { analyzed: number; total: number };
+  return { analyzed: row.analyzed, total: row.total };
+}
+
+export function lastInsightTime(db: DB): number | null {
+  const row = db.prepare(`SELECT max(generated_at) AS t FROM article_insights`).get() as { t: number | null };
+  return row.t;
+}
+
+export { parseTags };

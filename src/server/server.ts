@@ -1,0 +1,147 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import type { DB } from "../db/sqlite.ts";
+import * as repo from "../repo/articles.ts";
+import { insightStats } from "../repo/insights.ts";
+import type { HotBoardsCache } from "../ptt/hotboards.ts";
+import { parseIndexSlug, totalPages } from "../views/helpers.ts";
+import { hotBoardsPage, boardNotCollectedPage } from "../views/ptt.ts";
+import { pttBoardPage } from "../views/board.ts";
+import { pttArticlePage } from "../views/article.ts";
+import { boardsListPage } from "../views/pages.ts";
+
+const APP_CSS = readFileSync(join(import.meta.dir, "app.css"), "utf-8");
+
+export interface ServerOptions {
+  db: DB;
+  pageSize: number;
+  hot: HotBoardsCache;
+}
+
+const html = (body: string, status = 200): Response =>
+  new Response(body, {
+    status,
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=30" },
+  });
+
+const notFound = (): Response => html("not found", 404);
+
+export function createServer(opts: ServerOptions) {
+  let navBoards: repo.Board[] = [];
+  const refreshNav = () => {
+    try {
+      navBoards = repo.listBoards(opts.db, 5);
+      console.log(`loaded boards for nav (count=${navBoards.length})`);
+    } catch (e) {
+      console.warn("list boards for nav:", e);
+    }
+  };
+  refreshNav();
+  const navTimer = setInterval(refreshNav, 300_000);
+  navTimer.unref?.();
+
+  async function handler(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    const path = url.pathname;
+
+    try {
+      // -- static --
+      if (path === "/static/app.css") {
+        return new Response(APP_CSS, {
+          headers: { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "public, max-age=3600" },
+        });
+      }
+
+      // -- hot boards (PTT clone homepage) --
+      if (path === "/" || path === "/bbs/hotboards.html") {
+        try {
+          const boards = await opts.hot.get(req.signal);
+          return html(hotBoardsPage(boards));
+        } catch (e) {
+          console.error("fetch hot boards:", e);
+          return html("hot boards unavailable", 503);
+        }
+      }
+
+      // -- /bbs/{board}/{slug}: PTT-shape URLs --
+      const bbs = path.match(/^\/bbs\/([^/]+)\/([^/]+)$/);
+      if (bbs) {
+        const boardName = bbs[1]!;
+        const slug = bbs[2]!;
+        if (slug === "index.html") {
+          return renderBoard(opts, boardName, 1);
+        }
+        const n = parseIndexSlug(slug);
+        if (n !== null) {
+          const board = repo.getBoardByName(opts.db, boardName);
+          if (!board) return notCollected(boardName);
+          const total = totalPages(board.articleCount, opts.pageSize);
+          const page = total - n + 1;
+          if (page < 1 || n < 1) return notFound();
+          return renderBoard(opts, boardName, page);
+        }
+        if (slug.endsWith(".html")) {
+          const urlId = slug.slice(0, -5);
+          const d = repo.getArticleByURLID(opts.db, boardName, urlId);
+          if (!d) return notFound();
+          return html(pttArticlePage(d));
+        }
+        return notFound();
+      }
+
+      // -- /b/{board} --
+      const b = path.match(/^\/b\/([^/]+)$/);
+      if (b) {
+        return renderBoard(opts, b[1]!, parsePage(url));
+      }
+
+      // -- /a/{id} (DB id alias) --
+      const a = path.match(/^\/a\/(\d+)$/);
+      if (a) {
+        const d = repo.getArticle(opts.db, Number(a[1]));
+        if (!d) return notFound();
+        return html(pttArticlePage(d));
+      }
+
+      // -- /boards (legacy light list) --
+      if (path === "/boards") {
+        const boards = repo.listBoards(opts.db, 1);
+        return html(boardsListPage(boards, navBoards));
+      }
+
+      // -- /healthz --
+      if (path === "/healthz") {
+        const stats = insightStats(opts.db);
+        return new Response(`{"status":"ok","analyzed":${stats.analyzed},"total":${stats.total}}`, {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return notFound();
+    } catch (e) {
+      console.error(`handle ${path}:`, e);
+      return html("internal error", 500);
+    }
+  }
+
+  return { handler, stop: () => clearInterval(navTimer) };
+}
+
+function parsePage(url: URL): number {
+  const p = Number(url.searchParams.get("page"));
+  return Number.isInteger(p) && p >= 1 ? p : 1;
+}
+
+function renderBoard(opts: ServerOptions, boardName: string, page: number): Response {
+  const board = repo.getBoardByName(opts.db, boardName);
+  if (!board) return notCollected(boardName);
+  const p = page < 1 ? 1 : page;
+  const articles = repo.listBoardArticles(opts.db, board.id, opts.pageSize, (p - 1) * opts.pageSize);
+  const total = totalPages(board.articleCount, opts.pageSize);
+  if (p > total) return notFound();
+  return html(pttBoardPage(board, articles, p, total));
+}
+
+function notCollected(boardName: string): Response {
+  return html(boardNotCollectedPage(boardName));
+}
