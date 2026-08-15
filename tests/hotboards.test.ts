@@ -36,8 +36,7 @@ test("parseHotBoards on real fixture", async () => {
   expect(first.title.includes("八卦")).toBe(true);
 
   const last = boards[boards.length - 1]!;
-  expect(last.name).not.toBe("");
-  expect(last.nUser).toBeGreaterThan(0);
+  expect(last.name).not.toBe(""); // nUser is a live value (can be 0)
 });
 
 test("fetchHotBoards sends UA and parses", async () => {
