@@ -1,5 +1,6 @@
 import type { DB } from "../db/sqlite.ts";
 import { nowSecs } from "../db/sqlite.ts";
+import { mapLimit } from "../crawler/crawl/util.ts";
 import type { LLMClient } from "../llm/client.ts";
 import { ContentFilterError } from "../llm/client.ts";
 import { analyze } from "./analyze.ts";
@@ -46,6 +47,7 @@ export interface WorkerOptions {
   fallback?: LLMClient;
   fallbackModel?: string;
   refreshDays: number; // re-analyze changed articles posted within N days; 0 = off
+  concurrency?: number; // max simultaneous LLM calls (default 3)
 }
 
 export class InsightWorker {
@@ -56,7 +58,7 @@ export class InsightWorker {
       ? "off-peak (skip Mon-Fri 14:00-18:00 UTC+8, 50% credit)"
       : "continuous (24h)";
     console.log(
-      `insight worker started (model=${this.opts.model} batch=${this.opts.batch} min_net=${this.opts.minNet} mode=${mode} fallback=${this.opts.fallbackModel ?? "none"})`,
+      `insight worker started (model=${this.opts.model} batch=${this.opts.batch} concurrency=${this.opts.concurrency ?? 3} min_net=${this.opts.minNet} mode=${mode} fallback=${this.opts.fallbackModel ?? "none"})`,
     );
 
     // Fallback loop: retry content-filtered articles with the fallback
@@ -195,16 +197,18 @@ export class InsightWorker {
 
     let ok = 0;
     let failed = false;
-    await Promise.all(
-      articles.map(async (a) => {
-        if (signal.aborted) return;
+    await mapLimit(
+      articles,
+      this.opts.concurrency ?? 3,
+      async (a) => {
         try {
           await this.analyzeOne(a, signal, kind);
           ok++;
         } catch {
           failed = true; // details already logged in analyzeOne
         }
-      }),
+      },
+      signal,
     );
     if (failed) return 0; // errors occurred; return 0 so caller retries sooner
     return ok;

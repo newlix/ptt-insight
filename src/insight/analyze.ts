@@ -22,6 +22,9 @@ const SYSTEM_PROMPT =
 
 const MAX_CONTENT_LEN = 3000;
 const MAX_PUSHES = 500;
+// GLM-5.2 reasons before answering; 4096 occasionally left zero budget for
+// the answer itself ("empty content" errors) — 8192 gives reasoning headroom.
+const MAX_TOKENS = 8192;
 
 interface Analysis {
   tldr: string;
@@ -76,7 +79,7 @@ export async function analyze(
   let an: Analysis | null = null;
   let lastErr: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
-    res = await client.complete(SYSTEM_PROMPT, prompt, 4096, signal);
+    res = await client.complete(SYSTEM_PROMPT, prompt, MAX_TOKENS, signal);
     try {
       an = parseAnalysis(res.content);
       lastErr = null;

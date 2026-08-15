@@ -6,7 +6,7 @@ import type { Store } from "../../db/store.ts";
 import type { IndexEntry } from "../ptt/types.ts";
 import { urlIdTimestamp } from "../ptt/url.ts";
 import { buildArticleParams, buildPushParams, articleURL } from "./store.ts";
-import { sleepSecs, isAborted } from "./util.ts";
+import { sleepSecs, isAborted, mapLimit } from "./util.ts";
 
 // backfillBoard crawls a single board's history backward from newest to oldest page.
 // If batchPages > 0, only crawls that many pages before returning (breadth-first).
@@ -21,6 +21,7 @@ export async function backfillBoard(
   batchPages: number,
   windowBottom: number,
   signal?: AbortSignal,
+  concurrency = 1,
 ): Promise<void> {
   console.log(`backfill start: ${board.name} (from page ${board.lastBackfillPage})`);
 
@@ -71,16 +72,21 @@ export async function backfillBoard(
       }
       pagesCrawled++;
 
-      for (const entry of entries) {
-        if (entry.deleted || entry.urlId === "") continue;
-        const { stored, pushCount } = await processArticle(fetcher, store, board, entry, signal);
-        if (stored) {
-          articlesNew++;
-          pushesUpdated += pushCount;
-        } else {
-          errorsCount++;
-        }
-      }
+      const todo = entries.filter((e) => !e.deleted && e.urlId !== "");
+      await mapLimit(
+        todo,
+        concurrency,
+        async (entry) => {
+          const { stored, pushCount } = await processArticle(fetcher, store, board, entry, signal);
+          if (stored) {
+            articlesNew++;
+            pushesUpdated += pushCount;
+          } else {
+            errorsCount++;
+          }
+        },
+        signal,
+      );
 
       store.updateBackfillProgress(board.id, page, latestPage);
 
@@ -159,6 +165,7 @@ export async function runBackfillWorker(
   batchPages: number,
   windowStepSeconds: number,
   signal?: AbortSignal,
+  concurrency = 1,
 ): Promise<void> {
   let idleLoggedAt = 0;
   for (;;) {
@@ -186,7 +193,7 @@ export async function runBackfillWorker(
 
     const windowBottom = store.getBackfillWindow() ?? 0; // sweep meta missing — fall back to ungated
     try {
-      await backfillBoard(fetcher, store, board, batchPages, windowBottom, signal);
+      await backfillBoard(fetcher, store, board, batchPages, windowBottom, signal, concurrency);
     } catch (e) {
       if (signal?.aborted) return;
       if (!isAborted(e, signal)) console.error(`backfill ${board.name} failed:`, e);

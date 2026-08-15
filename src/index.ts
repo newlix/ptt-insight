@@ -63,6 +63,7 @@ async function main(): Promise<void> {
   const skipDiscovery = envStr("SKIP_DISCOVERY", "") === "1";
   const backfillWorkers = envInt("BACKFILL_WORKERS", 1, 1);
   const batchPages = envInt("BACKFILL_BATCH_PAGES", 200, 1);
+  const crawlConcurrency = envInt("CRAWL_CONCURRENCY", 3, 1);
   const windowDays = envInt("BACKFILL_RECENT_DAYS", 90, 0);
 
   // insight worker config
@@ -73,6 +74,7 @@ async function main(): Promise<void> {
   const fallbackAPIKey = envStr("FALLBACK_LLM_API_KEY", "");
   const fallbackModel = envStr("FALLBACK_LLM_MODEL", "gpt-5.6-luna");
   const workerBatch = envInt("WORKER_BATCH", 10);
+  const workerConcurrency = envInt("WORKER_CONCURRENCY", 3, 1);
   const workerMinNet = envInt("WORKER_MIN_NET", 20);
   const workerInterval = envSecs("WORKER_INTERVAL", 0);
   const insightRefreshDays = envInt("INSIGHT_REFRESH_DAYS", 7, 0);
@@ -120,9 +122,9 @@ async function main(): Promise<void> {
     );
 
     for (let i = 0; i < backfillWorkers; i++) {
-      tasks.push(runBackfillWorker(backfillFetcher, store, batchPages, windowDays * 86400, sig));
+      tasks.push(runBackfillWorker(backfillFetcher, store, batchPages, windowDays * 86400, sig, crawlConcurrency));
     }
-    tasks.push(runIncremental(incrementalFetcher, store, sig));
+    tasks.push(runIncremental(incrementalFetcher, store, sig, crawlConcurrency));
 
     // Periodic stats logging + heartbeat (Docker/systemd healthcheck reads /tmp/heartbeat)
     const statsTimer = setInterval(() => {
@@ -164,6 +166,7 @@ async function main(): Promise<void> {
       client,
       model: llmModel,
       batch: workerBatch,
+      concurrency: workerConcurrency,
       minNet: workerMinNet,
       intervalSecs: workerInterval,
       offPeak: workerOffPeak,

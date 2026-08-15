@@ -5,7 +5,7 @@ import type { Store } from "../../db/store.ts";
 import { urlIdTimestamp } from "../ptt/url.ts";
 import { nextInterval } from "./backoff.ts";
 import { secsAfter } from "../../db/sqlite.ts";
-import { sleepSecs, isAborted } from "./util.ts";
+import { sleepSecs, isAborted, mapLimit } from "./util.ts";
 import {
   processArticle,
   updateArticlePushes,
@@ -17,7 +17,12 @@ import {
 // Continuously claims the next-due board, fetches its index page,
 // discovers new articles, detects push-count changes, and reschedules.
 // Runs until the signal aborts.
-export async function runIncremental(fetcher: Fetcher, store: Store, signal?: AbortSignal): Promise<void> {
+export async function runIncremental(
+  fetcher: Fetcher,
+  store: Store,
+  signal?: AbortSignal,
+  concurrency = 1,
+): Promise<void> {
   for (;;) {
     if (signal?.aborted) return;
 
@@ -28,7 +33,7 @@ export async function runIncremental(fetcher: Fetcher, store: Store, signal?: Ab
       continue;
     }
 
-    await processBoardIncremental(fetcher, store, board, signal);
+    await processBoardIncremental(fetcher, store, board, signal, concurrency);
   }
 }
 
@@ -37,6 +42,7 @@ export async function processBoardIncremental(
   store: Store,
   board: Board,
   signal?: AbortSignal,
+  concurrency = 1,
 ): Promise<void> {
   let html: string;
   try {
@@ -54,25 +60,29 @@ export async function processBoardIncremental(
   }
 
   let newArticles = false;
-  for (const entry of entries) {
-    if (entry.deleted || entry.urlId === "") continue;
+  const todo = entries.filter((e) => !e.deleted && e.urlId !== "");
+  await mapLimit(
+    todo,
+    concurrency,
+    async (entry) => {
+      const existing = store.getArticleByBoardUrlID(board.id, entry.urlId);
+      if (!existing) {
+        // New article — fetch and insert
+        newArticles = true;
+        await processArticle(fetcher, store, board, entry, signal);
+        return;
+      }
 
-    const existing = store.getArticleByBoardUrlID(board.id, entry.urlId);
-    if (!existing) {
-      // New article — fetch and insert
-      newArticles = true;
-      await processArticle(fetcher, store, board, entry, signal);
-      continue;
-    }
+      // Existing article — check push count change
+      if (nrecChanged(existing.nrecRaw, entry)) {
+        await updateArticlePushes(fetcher, store, board, entry, signal);
+      }
 
-    // Existing article — check push count change
-    if (nrecChanged(existing.nrecRaw, entry)) {
-      await updateArticlePushes(fetcher, store, board, entry, signal);
-    }
-
-    // Update nrec from index (cheap, always do it)
-    updateNrecOnly(store, board.id, entry);
-  }
+      // Update nrec from index (cheap, always do it)
+      updateNrecOnly(store, board.id, entry);
+    },
+    signal,
+  );
 
   // Deletion detection: articles newer than the page's oldest entry but absent
   // from it must have been deleted (they can't have scrolled off).

@@ -45,7 +45,7 @@ test("incremental: new article fetched + inserted", async () => {
   );
 
   const board = e.store.upsertBoard({ name: "TestBoard" });
-  await processBoardIncremental(e.fetcher, e.store, board);
+  await processBoardIncremental(e.fetcher, e.store, board, undefined, 3);
 
   const art = e.store.getArticleByBoardUrlID(board.id, "M.1000000000.A.AAA");
   expect(art).not.toBeNull();
@@ -79,7 +79,7 @@ test("incremental: nrec change triggers push re-fetch", async () => {
     netCount: null,
   });
 
-  await processBoardIncremental(e.fetcher, e.store, board);
+  await processBoardIncremental(e.fetcher, e.store, board, undefined, 3);
 
   const updated = e.store.getArticleByBoardUrlID(board.id, "M.1000000000.A.AAA")!;
   expect(updated.nrecRaw).toBe("10");
@@ -121,7 +121,7 @@ test("incremental: same nrec → no refetch, interval doubles", async () => {
   });
 
   const board = e.store.getBoardByName("TestBoard")!;
-  await processBoardIncremental(e.fetcher, e.store, board);
+  await processBoardIncremental(e.fetcher, e.store, board, undefined, 3);
 
   // Interval should have doubled: 600 → 1200
   expect(e.store.getBoardByID(created.id)!.checkIntervalSecs).toBe(1200);

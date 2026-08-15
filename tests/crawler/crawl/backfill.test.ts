@@ -36,7 +36,7 @@ test("backfillBoard inserts articles (full 2-page board)", async () => {
   );
 
   const board = e.store.upsertBoard({ name: "TestBoard" });
-  await backfillBoard(e.fetcher, e.store, board, 0, 0);
+  await backfillBoard(e.fetcher, e.store, board, 0, 0, undefined, 3);
 
   // 3 articles inserted
   expect(e.store.countArticlesByBoard(board.id)).toBe(3);
@@ -75,7 +75,7 @@ test("backfillBoard resumes without re-fetching page 2", async () => {
   e.store.updateBackfillProgress(created.id, 2, 2); // page 2 already crawled
   const board = e.store.getBoardByID(created.id)!;
 
-  await backfillBoard(e.fetcher, e.store, board, 0, 0);
+  await backfillBoard(e.fetcher, e.store, board, 0, 0, undefined, 3);
 
   // Page 2 (index.html/index2.html) should NOT have been fetched
   expect(page2Hits).toBe(0);
