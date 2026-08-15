@@ -31,7 +31,11 @@ test("releaseOrphanedClaims clears stale claims so boards are reclaimable after 
   expect(e.store.claimBackfillBoard()).toBeNull();
 
   // startup release clears it and the board becomes claimable again
-  expect(releaseOrphanedClaims(e.store)).toBe(1);
+  // (run().changes counts trigger updates too — assert the invariant, not the count)
+  expect(releaseOrphanedClaims(e.store)).toBeGreaterThan(0);
+  expect(
+    (e.db.prepare("SELECT count(*) AS c FROM boards WHERE backfill_claimed_at IS NOT NULL").get() as { c: number }).c,
+  ).toBe(0);
   const claimed = e.store.claimBackfillBoard();
   expect(claimed).not.toBeNull();
   expect(claimed!.name).toBe("TestBoard");
