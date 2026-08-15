@@ -137,6 +137,17 @@ export function oldestTimestamp(entries: IndexEntry[]): number {
   return oldest;
 }
 
+// releaseOrphanedClaims clears every backfill claim at startup. This service
+// is the only backfill writer, so any claim present at boot was orphaned by
+// the previous process's death (SIGTERM mid-batch) — without this, those
+// boards stay excluded for 6h and backfill stalls after every restart.
+export function releaseOrphanedClaims(store: Store): number {
+  const res = (store as unknown as { db: import("../../db/sqlite.ts").DB }).db
+    .prepare("UPDATE boards SET backfill_claimed_at = NULL WHERE backfill_claimed_at IS NOT NULL")
+    .run();
+  return res.changes;
+}
+
 // runBackfillWorker is a single backfill worker that atomically claims boards.
 // Multiple workers can run concurrently — the claim transaction serializes
 // access (SQLite single-writer; PG used FOR UPDATE SKIP LOCKED).
@@ -152,6 +163,7 @@ export async function runBackfillWorker(
   windowStepSeconds: number,
   signal?: AbortSignal,
 ): Promise<void> {
+  let idleLoggedAt = 0;
   for (;;) {
     if (signal?.aborted) return;
 
@@ -166,9 +178,14 @@ export async function runBackfillWorker(
           continue;
         }
       }
+      if (idleLoggedAt === 0 || Date.now() - idleLoggedAt > 10 * 60_000) {
+        idleLoggedAt = Date.now();
+        console.log("backfill idle: no claimable board (all in-window boards claimed or at boundary)");
+      }
       if (!(await sleepSecs(60, signal))) return;
       continue;
     }
+    idleLoggedAt = 0;
 
     const windowBottom = store.getBackfillWindow() ?? 0; // sweep meta missing — fall back to ungated
     try {

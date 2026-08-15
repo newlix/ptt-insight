@@ -4,7 +4,7 @@ import { migrate } from "./db/migrate.ts";
 import { createStore } from "./db/store.ts";
 import { Fetcher } from "./crawler/ptt/fetcher.ts";
 import { discoverHotBoards, discoverBoards } from "./crawler/crawl/discovery.ts";
-import { runBackfillWorker } from "./crawler/crawl/backfill.ts";
+import { runBackfillWorker, releaseOrphanedClaims } from "./crawler/crawl/backfill.ts";
 import { runIncremental } from "./crawler/crawl/incremental.ts";
 import { isAborted } from "./crawler/crawl/util.ts";
 import { LLMClient } from "./llm/client.ts";
@@ -108,6 +108,9 @@ async function main(): Promise<void> {
     } catch (e) {
       if (!isAborted(e, sig)) console.error("hot boards discovery error:", e);
     }
+
+    const released = releaseOrphanedClaims(store);
+    if (released > 0) console.log(`released ${released} orphaned backfill claim(s) from previous run`);
 
     const incrementalFetcher = new Fetcher(incrementalRate);
     console.log(
