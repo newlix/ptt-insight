@@ -120,7 +120,7 @@ bunx tsc --noEmit # typecheck
 - SQLite `DESC` 天然 NULLS last；by-name 取 row 時**表達式欄位必須 alias**（`AS has_insight`）
 - 測試曾連 production DB + TRUNCATE 清空 34 小時資料（Go 時代）— 這是全面改 in-memory 測試的原因
 - Z.AI 1302 (429) 來自併發爆發（batch=10 無界 Promise.all）— 已用 semaphore + client 退避解決
-- 舊 PG 遺產（可刪）：`~/ptt/data/`、`~/ptt/backups/*.dump`；爬蟲歷史 repo：`~/github/newlix/ptt-crawler`（tombstone）
+- 舊 PG 遺產（可刪）：`~/ptt/data/`、`~/ptt/backups/*.dump`；ptt-crawler 本地已刪，歷史在 github.com/newlix/ptt-crawler（tombstone `17e91d7`）
 
 ## 演進
 
