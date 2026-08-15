@@ -27,8 +27,8 @@ test("releaseOrphanedClaims clears stale claims so boards are reclaimable after 
     board.id,
   );
 
-  // claim excluded → null
-  expect(e.store.claimBackfillBoard()!.id).not.toBe(board.id);
+  // sole board claimed → inside the 6h exclusion → nothing claimable
+  expect(e.store.claimBackfillBoard()).toBeNull();
 
   // startup release clears it and the board becomes claimable again
   expect(releaseOrphanedClaims(e.store)).toBe(1);
