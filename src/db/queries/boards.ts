@@ -35,6 +35,9 @@ export interface BoardQueries {
   getBackfillWindow(): number | null;
   setWindowFloor(id: number, windowFloor: number): void;
   releaseBackfillClaim(id: number): void;
+  // Clear every backfill claim (startup: the single-writer service just
+  // booted, so any existing claim is an orphan from the previous process).
+  releaseAllBackfillClaims(): number;
   // Decrement window_bottom by stepSeconds once every incomplete hot board has
   // reached the current boundary. Returns new boundary, or null when boards are
   // still mid-window (workers treat as "keep waiting").
@@ -164,6 +167,10 @@ export function createBoardQueries(db: DB): BoardQueries {
 
     releaseBackfillClaim(id: number): void {
       db.prepare(`UPDATE boards SET backfill_claimed_at = NULL WHERE id = ?`).run(id);
+    },
+
+    releaseAllBackfillClaims(): number {
+      return db.prepare(`UPDATE boards SET backfill_claimed_at = NULL WHERE backfill_claimed_at IS NOT NULL`).run().changes;
     },
 
     advanceBackfillWindow(stepSeconds: number): number | null {

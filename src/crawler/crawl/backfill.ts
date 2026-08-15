@@ -142,10 +142,7 @@ export function oldestTimestamp(entries: IndexEntry[]): number {
 // the previous process's death (SIGTERM mid-batch) — without this, those
 // boards stay excluded for 6h and backfill stalls after every restart.
 export function releaseOrphanedClaims(store: Store): number {
-  const res = (store as unknown as { db: import("../../db/sqlite.ts").DB }).db
-    .prepare("UPDATE boards SET backfill_claimed_at = NULL WHERE backfill_claimed_at IS NOT NULL")
-    .run();
-  return res.changes;
+  return store.releaseAllBackfillClaims();
 }
 
 // runBackfillWorker is a single backfill worker that atomically claims boards.
