@@ -170,7 +170,14 @@ export function createBoardQueries(db: DB): BoardQueries {
     },
 
     releaseAllBackfillClaims(): number {
-      return db.prepare(`UPDATE boards SET backfill_claimed_at = NULL WHERE backfill_claimed_at IS NOT NULL`).run().changes;
+      // run().changes double-counts here: trg_boards_set_updated_at re-updates
+      // every touched row. Count first, then clear, and report the true number.
+      const c = (db
+        .prepare(`SELECT count(*) AS c FROM boards WHERE backfill_claimed_at IS NOT NULL`)
+        .get() as { c: number }).c;
+      if (c === 0) return 0;
+      db.prepare(`UPDATE boards SET backfill_claimed_at = NULL WHERE backfill_claimed_at IS NOT NULL`).run();
+      return c;
     },
 
     advanceBackfillWindow(stepSeconds: number): number | null {

@@ -4,7 +4,7 @@ import {
   pathServer,
   type TestEnv,
 } from "./testutil.ts";
-import { runBackfillWorker, releaseOrphanedClaims } from "../../../src/crawler/crawl/backfill.ts";
+import { releaseOrphanedClaims } from "../../../src/crawler/crawl/backfill.ts";
 
 const envs: TestEnv[] = [];
 afterEach(() => {
@@ -31,8 +31,7 @@ test("releaseOrphanedClaims clears stale claims so boards are reclaimable after 
   expect(e.store.claimBackfillBoard()).toBeNull();
 
   // startup release clears it and the board becomes claimable again
-  // (run().changes counts trigger updates too — assert the invariant, not the count)
-  expect(releaseOrphanedClaims(e.store)).toBeGreaterThan(0);
+  expect(releaseOrphanedClaims(e.store)).toBe(1);
   expect(
     (e.db.prepare("SELECT count(*) AS c FROM boards WHERE backfill_claimed_at IS NOT NULL").get() as { c: number }).c,
   ).toBe(0);
