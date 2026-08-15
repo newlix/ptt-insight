@@ -15,7 +15,7 @@
 
 - 三個子系統用 env 開關（預設全開），共用一個 DB handle（`bun:sqlite` 同步呼叫天然序列化）
 - **Crawler**：全站 mirror www.ptt.cc；增量 adaptive backoff（10min–7d）+ backfill window sweep（熱門板優先、全域 90 天水位批次）+ 文章刪除偵測（index 缺席法）
-- **Worker**：挑 `net_count ≥ 20` 未分析文章（降序），文章+推文送 GLM 產出 TL;DR/社群觀點/精選推文/情緒/爭議度/標籤；平日 14-18 點（UTC+8）暫停省 Z.AI credit；content-filter 擋文由 fallback provider 重試
+- **Worker**：挑 `net_count ≥ 20` 未分析文章（降序），文章+推文送 GLM 產出 TL;DR/社群觀點/精選推文/情緒/爭議度/標籤；每列記錄 `model` + `generated_at`（文章頁 AI 區塊顯示）；**重新分析機制**：發文 7 天內且推文有變 → 重分析（每篇每小時最多一次）；暫時性錯誤（429/斷網）1 小時後重試；平日 14-18 點（UTC+8）暫停省 Z.AI credit；content-filter 擋文由 fallback provider（DeepSeek v4-pro）重試
 - **Web**：Bun.serve SSR（HTML template + `esc()` 轉義）、手寫 plain CSS（無框架）
 
 ## 技術棧
@@ -48,6 +48,7 @@ bun src/index.ts  # 啟動全部
 | `WORKER_BATCH` / `WORKER_MIN_NET` | `10` / `20` | 每批篇數 / 最低 net_count |
 | `WORKER_INTERVAL` | `0` | `0`=連續；`5m`=每 5 分鐘一批 |
 | `WORKER_OFFPEAK` | `1` | 避開平日 14:00-18:00 UTC+8（credit 半價時段外） |
+| `INSIGHT_REFRESH_DAYS` | `7` | 發文 N 天內且推文有變（`last_fetched_at > generated_at`）→ 重新分析（每篇每小時最多一次）；`0` = 關閉 |
 | `PAGE_SIZE` | `30` | 每頁文章數 |
 | `HOTBOARDS_TTL` | `1m` | 熱門看板快取 TTL（失敗回 stale） |
 

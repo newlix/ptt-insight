@@ -4,6 +4,7 @@ import { migrate } from "../src/db/migrate.ts";
 import * as repo from "../src/repo/articles.ts";
 import {
   claimPendingArticles,
+  claimStaleArticles,
   claimFilteredArticles,
   storeInsight,
   markInsightError,
@@ -110,6 +111,59 @@ test("markInsightError + filtered reclaim + fallback store", () => {
   });
   expect(claimFilteredArticles(db, 10)).toEqual([]);
   expect(insightStats(db).analyzed).toBe(1); // error cleared
+});
+
+test("claimStaleArticles: re-analyze when data changed, only fresh articles, hourly gate", () => {
+  const db = seedDB();
+  db.prepare(`INSERT INTO boards (id, name) VALUES (1, 'Test')`).run();
+  const now = Math.floor(Date.now() / 1000);
+
+  const mk = (urlId: string, postedAt: number) => {
+    const id = insertArticle(db, urlId, "x".repeat(50), 99);
+    db.prepare(`UPDATE articles SET posted_at = ? WHERE id = ?`).run(postedAt, id);
+    storeInsight(db, {
+      articleId: id, tldr: "v1", communityTake: "", topComments: "",
+      sentiment: "中立", controversy: "低", tags: [], model: "m",
+      promptTokens: 1, completionTokens: 1,
+    });
+    return id;
+  };
+  const setGen = (id: number, t: number) =>
+    db.prepare(`UPDATE article_insights SET generated_at = ? WHERE article_id = ?`).run(t, id);
+  const setFetched = (id: number, t: number) =>
+    db.prepare(`UPDATE articles SET last_fetched_at = ? WHERE id = ?`).run(t, id);
+
+  // stale candidate: fresh article, pushes changed after analysis, analysis > 1h old
+  const stale = mk("M.1.A.STALE", now - 3600);
+  setGen(stale, now - 7200);
+  setFetched(stale, now - 1800); // crawler re-fetched pushes 30min ago
+
+  // not stale: data never changed after analysis
+  const unchanged = mk("M.2.A.SAME", now - 3600);
+  setGen(unchanged, now - 7200);
+  setFetched(unchanged, now - 9000); // fetched before analysis
+
+  // too old: article posted 30 days ago (outside refresh window)
+  const old = mk("M.3.A.OLD", now - 30 * 86400);
+  setGen(old, now - 7200);
+  setFetched(old, now - 1800);
+
+  // hourly gate: analysis was 5 minutes ago
+  const recent = mk("M.4.A.RECENT", now - 3600);
+  setGen(recent, now - 300);
+  setFetched(recent, now - 100);
+
+  const claimed = claimStaleArticles(db, 10, 20, now - 7 * 86400);
+  expect(claimed.map((p) => p.id)).toEqual([stale]);
+
+  // after re-analysis succeeds, generated_at moves past last_fetched_at → gone
+  storeInsight(db, {
+    articleId: stale, tldr: "v2", communityTake: "", topComments: "",
+    sentiment: "中立", controversy: "低", tags: [], model: "m",
+    promptTokens: 1, completionTokens: 1,
+  });
+  expect(claimStaleArticles(db, 10, 20, now - 7 * 86400)).toEqual([]);
+  expect(db.prepare(`SELECT tldr FROM article_insights WHERE article_id = ?`).get(stale)).toEqual({ tldr: "v2" });
 });
 
 test("transient insight errors retry after cooldown; fresh ones don't", () => {

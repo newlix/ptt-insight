@@ -73,6 +73,41 @@ export function claimPendingArticles(db: DB, limit: number, minNet: number): Pen
   );
 }
 
+// Articles whose underlying data changed since their insight was generated
+// (crawler re-fetched pushes → last_fetched_at moved past generated_at), while
+// the article is still fresh enough for the discussion to be evolving.
+// Re-analysis is rate-limited to once per hour per article.
+export function claimStaleArticles(
+  db: DB,
+  limit: number,
+  minNet: number,
+  freshAfterSecs: number, // only articles posted after this epoch
+  recheckGapSecs = 3600,
+): PendingArticle[] {
+  const now = nowSecs();
+  return loadPending(
+    db,
+    `SELECT a.id, a.board_id, a.title, a.author, a.content, a.net_count
+     FROM articles a
+     JOIN article_insights ai ON ai.article_id = a.id
+     WHERE a.deleted_at IS NULL
+       AND a.content IS NOT NULL
+       AND length(a.content) > 20
+       AND COALESCE(a.net_count, 0) >= ?
+       AND ai.error IS NULL
+       AND a.posted_at > ?
+       AND a.last_fetched_at IS NOT NULL
+       AND a.last_fetched_at > ai.generated_at
+       AND ai.generated_at < ?
+     ORDER BY a.posted_at DESC
+     LIMIT ?`,
+    minNet,
+    freshAfterSecs,
+    now - recheckGapSecs,
+    limit,
+  );
+}
+
 // Articles whose primary-provider analysis was blocked by content filter
 // (ai.error = 'content_filter'), for retry with a fallback provider.
 export function claimFilteredArticles(db: DB, limit: number): PendingArticle[] {

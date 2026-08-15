@@ -39,6 +39,7 @@ export interface ArticleDetail extends ArticleCard {
   keyPoints: string | null;
   topComments: string | null;
   model: string | null;
+  insightGeneratedAt: number | null;
   pushes: Push[];
 }
 
@@ -145,12 +146,13 @@ interface DetailRow extends CardRow {
   key_points: string | null;
   top_comments: string | null;
   model: string | null;
+  insight_generated_at: number | null;
 }
 
 function getArticleWhere(db: DB, where: string, ...params: (string | number)[]): ArticleDetail | null {
   const row = db
     .prepare(
-      `SELECT ${CARD_COLS}, ${INSIGHT_COLS}, a.content, a.ip, ai.key_points, ai.top_comments, ai.model
+      `SELECT ${CARD_COLS}, ${INSIGHT_COLS}, a.content, a.ip, ai.key_points, ai.top_comments, ai.model, ai.generated_at AS insight_generated_at
        FROM articles a JOIN boards b ON b.id = a.board_id
        LEFT JOIN article_insights ai ON ai.article_id = a.id
        WHERE ${where}`,
@@ -169,6 +171,7 @@ function getArticleWhere(db: DB, where: string, ...params: (string | number)[]):
     keyPoints: row.key_points,
     topComments: row.top_comments,
     model: row.model,
+    insightGeneratedAt: row.insight_generated_at,
     pushes: pushes.map((p) => ({
       seq: p.seq,
       tag: p.tag,

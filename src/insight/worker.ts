@@ -1,9 +1,11 @@
 import type { DB } from "../db/sqlite.ts";
+import { nowSecs } from "../db/sqlite.ts";
 import type { LLMClient } from "../llm/client.ts";
 import { ContentFilterError } from "../llm/client.ts";
 import { analyze } from "./analyze.ts";
 import {
   claimPendingArticles,
+  claimStaleArticles,
   claimFilteredArticles,
   storeInsight,
   markInsightError,
@@ -43,6 +45,7 @@ export interface WorkerOptions {
   offPeak: boolean;
   fallback?: LLMClient;
   fallbackModel?: string;
+  refreshDays: number; // re-analyze changed articles posted within N days; 0 = off
 }
 
 export class InsightWorker {
@@ -159,12 +162,33 @@ export class InsightWorker {
     }
   }
 
+  // One scheduling quantum: new articles first, then stale re-analyses.
+  // Returns total processed; 0 = nothing to do (caller sleeps).
   private async processBatch(signal: AbortSignal): Promise<number> {
+    const fresh = await this.processClaim(signal, "new", (limit) =>
+      claimPendingArticles(this.opts.db, limit, this.opts.minNet),
+    );
+    const stale = this.opts.refreshDays > 0
+      ? await this.processClaim(signal, "reanalyze", (limit) =>
+          claimStaleArticles(
+            this.opts.db, limit, this.opts.minNet,
+            nowSecs() - this.opts.refreshDays * 86400,
+          ),
+        )
+      : 0;
+    return fresh + stale;
+  }
+
+  private async processClaim(
+    signal: AbortSignal,
+    kind: string,
+    claim: (limit: number) => PendingArticle[],
+  ): Promise<number> {
     let articles: PendingArticle[];
     try {
-      articles = claimPendingArticles(this.opts.db, this.opts.batch, this.opts.minNet);
+      articles = claim(this.opts.batch);
     } catch (e) {
-      console.error("claim articles:", e);
+      console.error(`claim ${kind} articles:`, e);
       return 0;
     }
     if (articles.length === 0) return 0;
@@ -175,7 +199,7 @@ export class InsightWorker {
       articles.map(async (a) => {
         if (signal.aborted) return;
         try {
-          await this.analyzeOne(a, signal);
+          await this.analyzeOne(a, signal, kind);
           ok++;
         } catch {
           failed = true; // details already logged in analyzeOne
@@ -186,7 +210,7 @@ export class InsightWorker {
     return ok;
   }
 
-  private async analyzeOne(a: PendingArticle, signal: AbortSignal): Promise<void> {
+  private async analyzeOne(a: PendingArticle, signal: AbortSignal, kind = "new"): Promise<void> {
     let result;
     try {
       result = await analyze(this.opts.client, a, this.opts.model, signal);
@@ -204,7 +228,7 @@ export class InsightWorker {
 
     storeInsight(this.opts.db, result);
     console.log(
-      `insight stored (article_id=${a.id} board_id=${a.boardId} prompt_tokens=${result.promptTokens} completion_tokens=${result.completionTokens} tldr=${result.tldr})`,
+      `insight stored (kind=${kind} article_id=${a.id} board_id=${a.boardId} prompt_tokens=${result.promptTokens} completion_tokens=${result.completionTokens} tldr=${result.tldr})`,
     );
   }
 }

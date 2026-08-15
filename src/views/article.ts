@@ -1,5 +1,5 @@
 import type { ArticleDetail, Push } from "../repo/articles.ts";
-import { esc, articleTime, sentimentClass, controversyClass } from "./helpers.ts";
+import { esc, articleTime, sentimentClass, controversyClass, relativeTime } from "./helpers.ts";
 import { pttLayout } from "./ptt.ts";
 
 // PTT article page clone: metalines, content, pushes, AI block, bottom bar.
@@ -58,7 +58,9 @@ function aiBlock(d: ArticleDetail): string {
     .filter((t) => t !== "")
     .map((t) => `<span class="c-f3">#${esc(t)}</span>`)
     .join("");
-  const modelLabel = d.model === null || d.model === "" ? "" : esc(d.model);
+  const modelLabel = d.model === null || d.model === ""
+    ? ""
+    : `${esc(d.model)}${d.insightGeneratedAt !== null ? ` · ${esc(relativeTime(d.insightGeneratedAt))}` : ""}`;
 
   return `<div class="ai-block">
 <div class="ai-block-title">AI 分析</div>

@@ -75,6 +75,7 @@ async function main(): Promise<void> {
   const workerBatch = envInt("WORKER_BATCH", 10);
   const workerMinNet = envInt("WORKER_MIN_NET", 20);
   const workerInterval = envSecs("WORKER_INTERVAL", 0);
+  const insightRefreshDays = envInt("INSIGHT_REFRESH_DAYS", 7, 0);
   const workerOffPeak = envStr("WORKER_OFFPEAK", "1") !== "0";
 
   // web config
@@ -165,6 +166,7 @@ async function main(): Promise<void> {
       offPeak: workerOffPeak,
       fallback,
       fallbackModel,
+      refreshDays: insightRefreshDays,
     });
     tasks.push(worker.run(sig));
   } else {
