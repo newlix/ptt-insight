@@ -15,7 +15,7 @@
 
 - 三個子系統用 env 開關（預設全開），共用一個 DB handle（`bun:sqlite` 同步呼叫天然序列化）
 - **Crawler**：全站 mirror www.ptt.cc；增量 adaptive backoff（10min–7d）+ backfill window sweep（熱門板優先、全域 90 天水位批次）+ 文章刪除偵測（index 缺席法）
-- **Worker**：挑 `net_count ≥ 20` 未分析文章（降序），文章+推文送 GLM 產出 TL;DR/社群觀點/精選推文/情緒/爭議度/標籤；每列記錄 `model` + `generated_at`（文章頁 AI 區塊顯示）；**重新分析機制**：發文 7 天內且推文有變 → 重分析（每篇每小時最多一次）；暫時性錯誤（429/斷網）1 小時後重試；平日 14-18 點（UTC+8）暫停省 Z.AI credit；content-filter 擋文由 fallback provider（DeepSeek v4-pro）重試
+- **Worker**：挑 `net_count ≥ 20` 未分析文章（降序），文章+推文送 GLM 產出 TL;DR/社群觀點/精選推文/情緒/爭議度/標籤（max_tokens 8192 — GLM reasoning 會先燒 token）；LLM client 內建 429/5xx 指數退避重試（15s 起步、±20% jitter、尊重 Retry-After）；每列記錄 `model` + `generated_at`（文章頁 AI 區塊顯示）；**重新分析機制**：發文 7 天內且推文有變 → 重分析（每篇每小時最多一次）；暫時性錯誤 1 小時後重試；平日 14-18 點（UTC+8）暫停省 Z.AI credit；content-filter 擋文由 fallback provider（DeepSeek v4-pro）重試
 - **Web**：Bun.serve SSR（HTML template + `esc()` 轉義）、手寫 plain CSS（無框架）
 
 ## 技術棧
@@ -38,6 +38,8 @@ bun src/index.ts  # 啟動全部
 | `DB_PATH` | `ptt.db` | SQLite 路徑（正式：`~/ptt-insight/ptt.db`） |
 | `RUN_CRAWLER` / `RUN_WORKER` / `RUN_WEB` | `1` | 子系統開關 |
 | `RATE_LIMIT` | `3` | 爬蟲全域速率（incremental 40% / backfill 60%） |
+| `CRAWL_CONCURRENCY` | `3` | 單頁內文章抓取並行數（全域 rate limiter 仍 cap） |
+| `WORKER_CONCURRENCY` | `3` | LLM 分析併發上限（過高觸發 Z.AI 429/1302） |
 | `BACKFILL_WORKERS` | `1` | 並行 backfill worker 數 |
 | `BACKFILL_BATCH_PAGES` | `200` | 每次claim爬多少頁就換板（breadth-first） |
 | `BACKFILL_RECENT_DAYS` | `90` | window sweep 批次大小；`0` = 關閉 |
