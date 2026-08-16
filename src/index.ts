@@ -7,6 +7,7 @@ import { RateLimiter, CombinedLimiter } from "./crawler/ptt/rate_limiter.ts";
 import { discoverHotBoards, discoverBoards } from "./crawler/crawl/discovery.ts";
 import { runBackfillWorker, releaseOrphanedClaims } from "./crawler/crawl/backfill.ts";
 import { runIncremental } from "./crawler/crawl/incremental.ts";
+import { runDeletionAuditor } from "./crawler/crawl/deletion_audit.ts";
 import { isAborted } from "./crawler/crawl/util.ts";
 import { LLMClient } from "./llm/client.ts";
 import { InsightWorker } from "./insight/worker.ts";
@@ -137,6 +138,7 @@ async function main(): Promise<void> {
       tasks.push(runBackfillWorker(backfillFetcher, store, batchPages, windowDays * 86400, sig, crawlConcurrency));
     }
     tasks.push(runIncremental(incrementalFetcher, store, sig, crawlConcurrency, incrementalMinSecs, incrementalMaxSecs));
+    tasks.push(runDeletionAuditor(incrementalFetcher, store, sig));
 
     // Periodic stats logging + heartbeat (Docker/systemd healthcheck reads /tmp/heartbeat)
     const statsBoards = db.prepare("SELECT count(*) AS c FROM boards");

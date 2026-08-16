@@ -35,6 +35,16 @@ export interface ArticleQueries {
   // an article OLDER than the page's oldest entry).
   findVanishedArticles(boardId: number, urlTimestamp: number, present: string[]): { id: number; urlId: string }[];
   countArticlesByBoard(boardId: number): number;
+  // Deletion-audit support: pick soft-deleted articles in the audit window
+  // (deleted long enough ago for a meaningful re-check, recently enough to
+  // still matter) that have not been audited yet.
+  listUnauditedDeletions(
+    minAgeSecs: number,
+    maxAgeSecs: number,
+    limit: number,
+  ): { boardId: number; urlId: string; boardName: string }[];
+  // Record the audit outcome; PK (board_id, url_id) makes it once-per-article.
+  recordDeletionAudit(boardId: number, urlId: string, result: "gone" | "alive"): void;
 }
 
 export function createArticleQueries(db: DB): ArticleQueries {
@@ -140,6 +150,34 @@ export function createArticleQueries(db: DB): ArticleQueries {
 
     countArticlesByBoard(boardId: number): number {
       return (db.prepare(`SELECT count(*) AS c FROM articles WHERE board_id = ?`).get(boardId) as { c: number }).c;
+    },
+
+    listUnauditedDeletions(
+      minAgeSecs: number,
+      maxAgeSecs: number,
+      limit: number,
+    ): { boardId: number; urlId: string; boardName: string }[] {
+      return db
+        .prepare(
+          `SELECT a.board_id AS boardId, a.url_id AS urlId, b.name AS boardName
+             FROM articles a JOIN boards b ON b.id = a.board_id
+            WHERE a.deleted_at IS NOT NULL
+              AND a.deleted_at <= unixepoch() - ?
+              AND a.deleted_at >= unixepoch() - ?
+              AND NOT EXISTS (
+                    SELECT 1 FROM deletion_audits x
+                     WHERE x.board_id = a.board_id AND x.url_id = a.url_id)
+            ORDER BY a.deleted_at DESC
+            LIMIT ?`,
+        )
+        .all(minAgeSecs, maxAgeSecs, limit) as { boardId: number; urlId: string; boardName: string }[];
+    },
+
+    recordDeletionAudit(boardId: number, urlId: string, result: "gone" | "alive"): void {
+      db.prepare(
+        `INSERT OR REPLACE INTO deletion_audits (board_id, url_id, checked_at, result)
+         VALUES (?, ?, ?, ?)`,
+      ).run(boardId, urlId, nowSecs(), result);
     },
   };
 }

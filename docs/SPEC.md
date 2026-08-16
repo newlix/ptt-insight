@@ -1,3 +1,32 @@
+# 任務 7 — 刪除稽核（deletion audit）：刪後複查 + PTT 端異常警報（2026-08-16）
+
+## 緣起
+
+任務 6 後殘餘縫隙：`updateArticlePushes`/`processArticle` 直接 404 路徑為單次觀察；
+若 PTT 端出錯（假 404）且文章已滑出 page-1，自癒要等 backfill 掃到（週級）。
+方案（使用者 16:29 批准）：**刪後 24h 低頻複查** —— 對近期軟刪文章重抓 URL，
+200 → 復活 + 警告；404 → 確認；大量復活 = PTT 端異常警報。日級自癒 + 異變可觀測。
+
+## 設計
+
+- 新表 `deletion_audits(board_id, url_id, checked_at, result)`（migration 0003，
+  PK (board_id,url_id)，result ∈ 'gone'|'alive'）——每篇只稽核一次 + 歷史即警報資料。
+- `src/crawler/crawl/deletion_audit.ts`：
+  - `runDeletionAudit(fetcher, store, opts)`：選「deleted_at 介於 24h 前～7d 前、
+    未稽核」最多 50 筆；逐篇 `fetchArticlePage`：200 → `resurrectArticle` +
+    'alive' + warn；NotFoundError → 'gone'；其他錯誤 → 不記錄（下輪重試）。
+    resurrected ≥ 10 → `console.error` 大聲 PTT 異常警報行。
+  - `runDeletionAuditor(...)`：每 3600s 一輪（常數，不開 env），共用
+    `incrementalFetcher`（global limiter 借閒置份額；50 筆/輪可忽略）。
+- index.ts：`tasks.push(runDeletionAuditor(incrementalFetcher, store, sig))`
+  + 啟動行加註 `deletion-audit`。
+- 常數：DELAY 24h、LOOKBACK 7d、MAX 50/run、INTERVAL 3600s、ALARM ≥10。
+- 測試（tests/crawler/crawl/deletion_audit.test.ts）：200 復活+alive 行、
+  404 保持+gone 行、5xx 暫態不記錄、delay 窗外不選、稽核一次（二輪選 0）。
+
+### 卡 7.1 — deletion audit 實作 + 測試 + 部署
+acceptance: `bun test 2>&1 | grep -q " 0 fail" && bunx tsc --noEmit && rg -q runDeletionAuditor src/index.ts`
+
 # 任務 6 — 假刪除風暴修復（vanish detection 硬化 + 復活 + 資料復原）（2026-08-16）
 
 ## 緣起（[measured] 本 session 取證）

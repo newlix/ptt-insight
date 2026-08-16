@@ -31,7 +31,7 @@
 
 - **增量**：每板 adaptive backoff（有新文 → 2min，`INCREMENTAL_MIN_SECS` 可調；沒有 → interval×2 上限 7 天，`INCREMENTAL_MAX_SECS` 可調）；index 頁 `nrec_raw` 與 DB 比對，變了才重抓文章頁（省 80-90% request）
 - **Backfill window sweep**：只抓熱門板（`is_hot`），全域 90 天水位批次（`window_bottom` 全部到達才 `AdvanceBackfillWindow` 減 90 天）；每板 `window_floor` 記連續覆蓋最舊文章（URL timestamp 免抓全文）；breadth-first（`BACKFILL_BATCH_PAGES` 換板）；**claim 生命週期**：批次暫停/達邊界即釋放（resume 靠 `last_backfill_page`），錯誤保留 6h 排斥當壞板 cool-off；水位前進要求所有未完熱板到位，故殭屍 claim 會讓全系統 idle——啟動 `releaseAllBackfillClaims` 是保險
-- **刪除偵測（index 缺席法）**：文章比 index 首頁最舊文新卻不在頁上 → 不可能捲頁 → 抓前一頁複驗（在前一頁=活著；兩頁都缺席且比前一頁最舊新=確認刪除 soft delete；更舊=灰色地帶不動）
+- **刪除偵測（index 缺席法 + 稽核）**：五道防線 — 候選 → 重抓複核 → 矛盾界（比快照最新文新=快照 stale）→ 滑落邊界（第二新頁 newest，置底文免疫）→ 量護欄（>100 拒絕）→ 文章 URL 直接 404 才刪；復活三路（index 重現 / 成功抓取 upsert / 刪後 24h 稽核：`deletion_audits` 每篇一次重抓，200=復活+警告，大量復活=PTT 端異常警報；每小時一輪 ≤50 筆）
 - **孤兒 claim**：SIGTERM 中斷會留 `backfill_claimed_at`，6h exclusion 會讓 backfill 停擺 → 啟動時 `releaseAllBackfillClaims()`（本服務是唯一 writer，起動時任何 claim 必是孤兒）
 - **看板發現**：`/bbs/hotboards.html`（~150 熱門板）+ 背景 `/cls/1` 遞迴全樹（~20K 板）
 
@@ -93,7 +93,7 @@ scripts/backup.sh          — SQLite 線上備份（wal_checkpoint + .backup + 
 ## 測試
 
 ```bash
-bun test          # 102 tests；in-memory SQLite，不可能碰 production
+bun test          # 107 tests；in-memory SQLite，不可能碰 production
 bunx tsc --noEmit # typecheck
 ```
 
