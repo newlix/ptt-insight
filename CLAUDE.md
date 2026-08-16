@@ -29,7 +29,7 @@
 
 ## Crawler 策略
 
-- **增量**：每板 adaptive backoff（有新文 → 10min；沒有 → interval×2 上限 7 天）；index 頁 `nrec_raw` 與 DB 比對，變了才重抓文章頁（省 80-90% request）
+- **增量**：每板 adaptive backoff（有新文 → 2min，`INCREMENTAL_MIN_SECS` 可調；沒有 → interval×2 上限 7 天，`INCREMENTAL_MAX_SECS` 可調）；index 頁 `nrec_raw` 與 DB 比對，變了才重抓文章頁（省 80-90% request）
 - **Backfill window sweep**：只抓熱門板（`is_hot`），全域 90 天水位批次（`window_bottom` 全部到達才 `AdvanceBackfillWindow` 減 90 天）；每板 `window_floor` 記連續覆蓋最舊文章（URL timestamp 免抓全文）；breadth-first（`BACKFILL_BATCH_PAGES` 換板）
 - **刪除偵測（index 缺席法）**：文章比 index 首頁最舊文新卻不在頁上 → 不可能捲頁 → 抓前一頁複驗（在前一頁=活著；兩頁都缺席且比前一頁最舊新=確認刪除 soft delete；更舊=灰色地帶不動）
 - **孤兒 claim**：SIGTERM 中斷會留 `backfill_claimed_at`，6h exclusion 會讓 backfill 停擺 → 啟動時 `releaseAllBackfillClaims()`（本服務是唯一 writer，起動時任何 claim 必是孤兒）
@@ -51,6 +51,8 @@
 | `RUN_CRAWLER` / `RUN_WORKER` / `RUN_WEB` | `1` | 子系統開關 |
 | `RATE_LIMIT` | `3` | 爬蟲全域速率（incremental 40% / backfill 60%） |
 | `CRAWL_CONCURRENCY` | `3` | 單頁內文章抓取並行數（全域 rate limiter 仍 cap） |
+| `INCREMENTAL_MIN_SECS` | `120` | 活躍板檢查 floor（有新文 → 重置至此；`2m` Go duration 亦可） |
+| `INCREMENTAL_MAX_SECS` | `604800` | 安靜板 backoff 上限（7 天） |
 | `WORKER_CONCURRENCY` | `3` | LLM 併發上限（過高觸發 Z.AI 429/1302） |
 | `BACKFILL_WORKERS` | `1` | 並行 backfill worker 數 |
 | `BACKFILL_BATCH_PAGES` | `200` | 每次 claim 爬多少頁就換板 |
@@ -91,7 +93,7 @@ scripts/backup.sh          — SQLite 線上備份（wal_checkpoint + .backup + 
 ## 測試
 
 ```bash
-bun test          # 86 tests；in-memory SQLite，不可能碰 production
+bun test          # 88 tests；in-memory SQLite，不可能碰 production
 bunx tsc --noEmit # typecheck
 ```
 

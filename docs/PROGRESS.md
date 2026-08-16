@@ -5,6 +5,38 @@
 Baseline：83 tests / tsc clean / git clean。全面 read-only 審查（37 檔）後立 5 卡（docs/SPEC.md），
 全部完成。84 tests / tsc clean 收尾。
 
+---
+
+# 任務 4 — 提高爬文頻率（2026-08-16）
+
+## 範圍與落地
+
+使用者「提高爬文的頻率」。瓶頸不在吞吐（`RATE_LIMIT` 早已可調）而在 per-board 檢查
+floor：`backoff.ts` 硬編碼 600s，活躍板最快 10 分鐘才回查。
+
+- `MIN_INTERVAL_SECS` 600→**120**（活躍板 2 分鐘一查，5× 更快發現新文/推文變化）；
+  `nextInterval` 參數化 min/max，`runIncremental`/`processBoardIncremental` 傳遞。
+- 新 env：`INCREMENTAL_MIN_SECS`（預設 120）/`INCREMENTAL_MAX_SECS`（預設 7d），
+  支援 Go duration；啟動 log 帶 `board-check: 120s-604800s`。
+- DB 零遷移：活躍板下次有新文即自動收斂 600→120；安靜板維持 backoff。
+- Request 量增量僅 index 頁（活躍板 +4 檢查/10min），文章頁抓取量不變；
+  全域 limiter 仍 cap 於 `RATE_LIMIT`。
+
+## 驗證
+
+- `bun test` 88 pass / 0 fail（+2：backoff custom bounds、interval resets to floor）、
+  `bunx tsc --noEmit` exit 0。
+- verifier（獨立重跑）：4/4 PASS（wiring 全鏈 index→runIncremental→nextInterval）。
+- E2E 實機（真實 PTT、temp DB、75s）：啟動行 `board-check: 120s-604800s`、
+  console 7× `reset interval to 120s`、DB `check_interval_secs=120` 共 7 板
+  （log 留 /tmp/crawl-freq-e2e.log）；SIGTERM 優雅關閉。
+
+## 教訓
+
+- 測試傳 stale board snapshot 給 processBoardIncremental：`setBoardInterval` 後必須
+  重取 row（production 的 claimNextBoard 本來就是 fresh row）— 第一次寫測試踩到，
+  received 120 vs expected 7200 即此因。
+
 ## 完成卡
 
 1. **healthz minNet 一致性**：`insightStats(db, minNet=20)` 參數化、`ServerOptions.minNet`、

@@ -3,7 +3,7 @@ import { parseIndexPage } from "../ptt/index_parser.ts";
 import type { Board } from "../../db/types.ts";
 import type { Store } from "../../db/store.ts";
 import { urlIdTimestamp } from "../ptt/url.ts";
-import { nextInterval } from "./backoff.ts";
+import { nextInterval, MIN_INTERVAL_SECS, MAX_INTERVAL_SECS } from "./backoff.ts";
 import { secsAfter } from "../../db/sqlite.ts";
 import { sleepSecs, isAborted, mapLimit } from "./util.ts";
 import {
@@ -23,6 +23,8 @@ export async function runIncremental(
   store: Store,
   signal?: AbortSignal,
   concurrency = 1,
+  minIntervalSecs: number = MIN_INTERVAL_SECS,
+  maxIntervalSecs: number = MAX_INTERVAL_SECS,
 ): Promise<void> {
   for (;;) {
     if (signal?.aborted) return;
@@ -34,7 +36,7 @@ export async function runIncremental(
       continue;
     }
 
-    await processBoardIncremental(fetcher, store, board, signal, concurrency);
+    await processBoardIncremental(fetcher, store, board, signal, concurrency, minIntervalSecs, maxIntervalSecs);
   }
 }
 
@@ -44,6 +46,8 @@ export async function processBoardIncremental(
   board: Board,
   signal?: AbortSignal,
   concurrency = 1,
+  minIntervalSecs: number = MIN_INTERVAL_SECS,
+  maxIntervalSecs: number = MAX_INTERVAL_SECS,
 ): Promise<void> {
   let html: string;
   try {
@@ -92,7 +96,7 @@ export async function processBoardIncremental(
   await detectVanishedArticles(fetcher, store, board, entries, maxPageIndex, signal);
 
   // Adjust adaptive backoff interval
-  const newIntervalSecs = nextInterval(board.checkIntervalSecs, newArticles);
+  const newIntervalSecs = nextInterval(board.checkIntervalSecs, newArticles, minIntervalSecs, maxIntervalSecs);
   store.setBoardInterval(board.id, newIntervalSecs, secsAfter(newIntervalSecs));
 
   if (newArticles) {

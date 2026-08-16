@@ -65,6 +65,9 @@ async function main(): Promise<void> {
   const batchPages = envInt("BACKFILL_BATCH_PAGES", 200, 1);
   const crawlConcurrency = envInt("CRAWL_CONCURRENCY", 3, 1);
   const windowDays = envInt("BACKFILL_RECENT_DAYS", 90, 0);
+  // Incremental check cadence: floor for active boards, ceiling for dead ones.
+  const incrementalMinSecs = Math.max(1, envSecs("INCREMENTAL_MIN_SECS", 120));
+  const incrementalMaxSecs = Math.max(incrementalMinSecs, envSecs("INCREMENTAL_MAX_SECS", 604800));
 
   // insight worker config
   const llmBaseURL = envStr("LLM_BASE_URL", "http://localhost:18905");
@@ -118,13 +121,14 @@ async function main(): Promise<void> {
     console.log(
       `crawler starting (incremental: ${incrementalRate.toFixed(1)} req/s, ` +
         `backfill: ${backfillRate.toFixed(1)} req/s, workers: ${backfillWorkers}, ` +
-        `batch: ${batchPages} pages, window-step: ${windowDays}d)`,
+        `batch: ${batchPages} pages, window-step: ${windowDays}d, ` +
+        `board-check: ${incrementalMinSecs}s-${incrementalMaxSecs}s)`,
     );
 
     for (let i = 0; i < backfillWorkers; i++) {
       tasks.push(runBackfillWorker(backfillFetcher, store, batchPages, windowDays * 86400, sig, crawlConcurrency));
     }
-    tasks.push(runIncremental(incrementalFetcher, store, sig, crawlConcurrency));
+    tasks.push(runIncremental(incrementalFetcher, store, sig, crawlConcurrency, incrementalMinSecs, incrementalMaxSecs));
 
     // Periodic stats logging + heartbeat (Docker/systemd healthcheck reads /tmp/heartbeat)
     const statsBoards = db.prepare("SELECT count(*) AS c FROM boards");

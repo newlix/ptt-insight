@@ -1,3 +1,50 @@
+# 任務 4 — 提高爬文頻率（2026-08-16）
+
+## 緣起
+
+使用者要求「提高爬文的頻率」。[measured] 現行 per-board incremental 排程：
+`backoff.ts` 硬編碼 `MIN_INTERVAL_SECS=600`（有新文 → 10 分鐘後再查）、
+`MAX_INTERVAL_SECS=604800`（沒新文 → interval×2 上限 7 天）；不可由 env 調。
+全域 request 速率由 `RATE_LIMIT`（預設 3 req/s，incremental 40%）cap，與檢查間隔無關 —
+檢查間隔決定「多快發現新文/推文變化」，速率限制決定吞吐，兩者獨立。
+
+## 設計
+
+- `nextInterval(currentSecs, newArticles, minSecs=MIN, maxSecs=MAX)` 參數化；
+  常數改名語意不變（仍 export 供測試引用）。
+- `runIncremental`/`processBoardIncremental` 加可選 `minIntervalSecs`/`maxIntervalSecs`
+  （預設 = 常數），既有測試呼叫簽名不破。
+- `index.ts` 新 env：`INCREMENTAL_MIN_SECS`（預設 **120s，5× 更頻繁**）、
+  `INCREMENTAL_MAX_SECS`（預設 7d 不變）；envSecs 支援 Go duration（"2m"）；邊界 clamp
+  min≥1、max≥min。啟動 log 帶出。
+- DB 無需遷移：活躍板下次「有新文」檢查即 reset 到新 floor（600→120 自動收斂）；
+  安靜板維持 backoff。schema DEFAULT 600 只影響新板首輪，不改（migration append-only 原則）。
+- Request 量影響評估 [inferred]：增量全落在 index 頁（活躍板每 10min 多 4 次輕量檢查）；
+  文章頁抓取量不變（同樣的文章終究要抓，只是延遲下降）；全域 limiter 仍 cap。
+
+## 任務卡
+
+### 卡 4.1 — backoff 參數化 + 新預設 + env 接線
+backoff.ts、incremental.ts、index.ts 三檔 + backoff.test.ts（自訂 min/max 案例、
+更新常數表）+ incremental.test.ts（新文後 interval reset 到傳入 min 的斷言）。
+- 驗收：`bun test` 全綠（新增 ≥2 測試）；`bunx tsc --noEmit` exit 0；
+  `rg INCREMENTAL_MIN_SECS src/index.ts` 有接線。
+
+### 卡 4.2 — 實機 E2E + docs 同步
+- E2E：`DB_PATH=/tmp/... RUN_WORKER=0 RUN_WEB=0 SKIP_DISCOVERY=1` 跑 ~75s（真實 PTT、
+  temp DB），`sqlite3 "SELECT count(*) FROM boards WHERE check_interval_secs=120"` > 0，
+  console 出現 `reset interval to 120s`。
+- CLAUDE.md：env 表 +2 行、「Crawler 策略」10min→2min 描述、測試數對齊；
+  docs/PROGRESS.md 記錄。
+- 驗收：rg 檢查 docs 一致；E2E 輸出留存。
+
+## 里程碑
+
+`refuter` 訛證（餵本節錄）。綠後 commit + push + 部署（~/ptt-insight pull →
+systemctl restart → journalctl 確認啟動行帶新 interval）。
+
+---
+
 # SPEC — 改善整個 codebase（ptt-insight）
 
 日期：2026-08-16 · Baseline：`bun test` 83 pass / `bunx tsc --noEmit` 乾淨 / git clean。

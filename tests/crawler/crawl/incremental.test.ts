@@ -54,6 +54,26 @@ test("incremental: new article fetched + inserted", async () => {
   expect(art!.pushCount).toBe(1);
 });
 
+test("incremental: interval resets to configured floor on new articles, doubles when quiet", async () => {
+  const e = env(
+    pathServer({
+      "/bbs/TestBoard/index.html": idxHTML("3"),
+      "/bbs/TestBoard/M.1000000000.A.AAA.html": cannedArticleAAA,
+    }),
+  );
+
+  // Active board: new article discovered → reset to the passed floor (60s)
+  const board = e.store.upsertBoard({ name: "TestBoard" });
+  e.store.setBoardInterval(board.id, 3600, 0);
+  await processBoardIncremental(e.fetcher, e.store, e.store.getBoardByName("TestBoard")!, undefined, 3, 60, 86400);
+  expect(e.store.getBoardByName("TestBoard")!.checkIntervalSecs).toBe(60);
+
+  // Quiet board: same index, nothing new → double from current, capped by max
+  e.store.setBoardInterval(board.id, 5000, 0);
+  await processBoardIncremental(e.fetcher, e.store, e.store.getBoardByName("TestBoard")!, undefined, 3, 60, 7200);
+  expect(e.store.getBoardByName("TestBoard")!.checkIntervalSecs).toBe(7200);
+});
+
 test("incremental: nrec change triggers push re-fetch", async () => {
   const e = env(
     pathServer({
