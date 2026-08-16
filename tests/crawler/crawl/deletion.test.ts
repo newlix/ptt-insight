@@ -1,6 +1,7 @@
 import { test, expect, afterEach } from "bun:test";
 import { setupTestEnv, pathServer, type TestEnv } from "./testutil.ts";
 import { processBoardIncremental } from "../../../src/crawler/crawl/incremental.ts";
+import { processArticle } from "../../../src/crawler/crawl/backfill.ts";
 
 const envs: TestEnv[] = [];
 afterEach(() => {
@@ -297,27 +298,33 @@ test("ground truth: vanished candidate whose URL is alive is NOT deleted", async
   expect(e.store.getArticleByBoardUrlID(board.id, "M.1950000000.A.ALIVE")!.deletedAt).toBeNull();
 });
 
-test("upsert resurrection: a successful article-page crawl clears the deletion mark", async () => {
-  // Deep-page path: backfill/incremental re-crawls an article whose stored
-  // row is soft-deleted; the successful fetch must resurrect it.
+test("upsert resurrection: processArticle crawl of a soft-deleted row clears the mark", async () => {
+  // Deep-page path (discriminating): drive processArticle directly — the
+  // entry is NOT listed on any index page, so the page-1 listing-resurrection
+  // cannot fire; only insertArticle's ON CONFLICT clause can clear the mark.
+  // This mirrors backfillBoard re-crawling a deep page that lists an article
+  // whose stored row was falsely soft-deleted.
   const e = env(
     pathServer({
-      "/bbs/DelBoard/index.html": deletionIndexPage(2, 1, "M.1500000000.A.BACK"),
-      "/bbs/DelBoard/M.1500000000.A.BACK.html": articlePage("M.1500000000.A.BACK"),
+      "/bbs/DelBoard/M.1500000000.A.DEEP.html": articlePage("M.1500000000.A.DEEP"),
     }),
   );
 
   const board = e.store.upsertBoard({ name: "DelBoard" });
-  insertArticle(e, board.id, "M.1500000000.A.BACK", 1500000000);
+  insertArticle(e, board.id, "M.1500000000.A.DEEP", 1500000000);
   e.db.prepare("UPDATE articles SET deleted_at = 1000").run();
 
-  // Simulate the crawl path: the entry is listed and its row exists, so the
-  // incremental flow goes through updateArticlePushes (nrec changed), which
-  // re-fetches the article page and upserts.
-  e.db.prepare("UPDATE articles SET nrec_raw = '4'").run(); // force nrecChanged
-  await processBoardIncremental(e.fetcher, e.store, board);
+  await processArticle(e.fetcher, e.store, board, {
+    urlId: "M.1500000000.A.DEEP",
+    title: "Article",
+    author: "user",
+    date: "1/01",
+    nrecRaw: "5",
+    mark: "",
+    deleted: false,
+  });
 
-  expect(e.store.getArticleByBoardUrlID(board.id, "M.1500000000.A.BACK")!.deletedAt).toBeNull();
+  expect(e.store.getArticleByBoardUrlID(board.id, "M.1500000000.A.DEEP")!.deletedAt).toBeNull();
 });
 
 test("resurrection: article listed on the index page clears its deletion mark", async () => {
