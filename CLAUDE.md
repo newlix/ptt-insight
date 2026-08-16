@@ -93,7 +93,7 @@ scripts/backup.sh          — SQLite 線上備份（wal_checkpoint + .backup + 
 ## 測試
 
 ```bash
-bun test          # 92 tests；in-memory SQLite，不可能碰 production
+bun test          # 102 tests；in-memory SQLite，不可能碰 production
 bunx tsc --noEmit # typecheck
 ```
 
