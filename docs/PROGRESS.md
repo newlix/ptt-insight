@@ -296,3 +296,6 @@ curl 三頁型取渲染輸出，與官方基準逐項比對（結構/class/顏�
   戰況、Beauty 神人尋人）。成本 ~75cr/天。
 - 教訓：**bun:sqlite `.get()` 無列回 `null` 不是 `undefined`**——`!== undefined` 判存
   恆真（hasDigest 初版 bug，測試抓到）。用 `!= null`。
+- 9.7b（使用者指示）：刪文**保存與發布分離**——mirror 留檔（內部、DB）但不對外。
+  `/deleted` 改 `DELETED_ARCHIVE_TOKEN` 控制、env 未設=整頁 404、topbar 連結移除。
+  原則：尊重 PTT 作者/板主的刪除權；「看得到別人刪掉的東西」不作為產品功能發布。
