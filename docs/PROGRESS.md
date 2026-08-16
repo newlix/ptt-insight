@@ -35,11 +35,23 @@ restart → 全板立即到期）後 local 11:00 一小時 35,262 篇假刪**，
   1786762800`（08-15 11:00 local 起 = 假刪除時代全部，保留 7 筆真 baseline；
   受災面 Marginalman 35.5K/C_Chat 34.2K/HatePolitics 1.7K/…），待使用者批准。
 
-## 待辦
+## 收尾（16:08 使用者批准 → 16:13 執行）
 
-- 復原 SQL（使用者批准）：resurrect 08-15 11:00 起全部假刪（修復版偵測會對真刪文
-  重新標記，自癒）。
-- drip 機制確認：≤100/檢查的慢滴假刪（若有）依賴 Stage3 驗證攔截 — 部署後觀察。
+- 復原：snapshot 快照（71,609 列 deleted_at 值，可逆保險）→ 精煉邊界（保留
+  v2/v3 代的 1 筆真刪 + 7 baseline）→ UPDATE 71,601 列 / 0.63s。
+- 驗證：C_Chat 46,327 / Marginalman 43,870 全數可見、healthz total
+  32,069→41,955、journal 0 誤刪、stats 正常成長。
+
+## 教訓
+
+- 對外部快照的 destructive 動作三要素：重抓複核、量護欄、可逆（復活 +
+  事前快照）。缺一都會在 PTT 維護時窗重演。
+- 時區取證：journal（local）vs DB epoch（UTC）混讀會造出「停機期間外部刪除」
+  這種幻覺時間線；跨源對時先統一時區再推理。
+- close-guard 的 verdict 機制要求 cheap-tier verifier「只跑命令、先寫 verdict、
+  正面寫預期」；否定式 acceptance（`! rg`）曾被誤判 FAIL。
+- sqlite3 .backup 對 1.3GB 高寫入 DB 會超時；局部快照受影響欄位（2.7MB）
+  是更快且更針對的可逆保險。
 
 # （原敘事）
 

@@ -67,7 +67,19 @@ refuter FAIL 後的三項加固：
   既有 3 行 lesson）+ push。
 - 部署正式實例（pull + restart + journal 驗證啟動）。
 
-## 資料復原（使用者批准後執行，不屬程式碼卡）
+## 資料復原（已執行，2026-08-16 16:13）
+
+使用者 16:08 批准。安全措施：`backups/deleted_at_snapshot_20260816_1608.db`
+（71,609 列 id/board/url/deleted_at 快照，2.7MB，完全可逆）。執行時精煉邊界：
+**保留 ≥15:04（v2/v3 代碼）的刪除標記**（URL/boundary 已驗證的真刪，1 筆），
+只清壞代碼時代：
+```sql
+UPDATE articles SET deleted_at = NULL
+ WHERE deleted_at BETWEEN 1786762800 AND 1786863849;  -- 71,601 rows, 0.63s
+```
+結果：total deleted = 8（7 baseline + 1 SportLottery 真刪）；C_Chat live 46,327、
+Marginalman live 43,870；healthz total 32,069 → **41,955**；服務持續運行、
+0 誤刪。深頁真刪文殘留可見（可接受保真誤差，修復版偵測會對覆蓋內者重新標記）。
 
 [measured] 08-15 11:00 local（epoch 1786762800）之前全庫僅 **7** 筆刪除 —
 假刪除時代涵蓋全部 71,601+ 筆（08-16 15:10 實測；修復部署後新增 ≈ 0）。
