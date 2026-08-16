@@ -27,7 +27,6 @@ export interface BoardQueries {
   updateBackfillProgress(id: number, lastBackfillPage: number, latestPageIndex: number): void;
   updateLatestPageIndex(id: number, latestPageIndex: number): void;
   completeBackfill(id: number): void;
-  getPendingBackfillBoards(): Board[];
   // Atomic claim for concurrent backfill workers. Window sweep: hot boards first
   // (non-hot only after ALL hot boards are fully backfilled), each board only
   // claimable while its window_floor hasn't reached the global boundary.
@@ -145,13 +144,6 @@ export function createBoardQueries(db: DB): BoardQueries {
       db.prepare(
         `UPDATE boards SET backfill_complete = 1, backfill_recent_complete = 1, window_floor = 0 WHERE id = ?`,
       ).run(id);
-    },
-
-    getPendingBackfillBoards(): Board[] {
-      const rows = db
-        .prepare(`SELECT * FROM boards WHERE backfill_complete = 0 ORDER BY user_count DESC, id`)
-        .all() as BoardRow[];
-      return rows.map(toBoard);
     },
 
     getBackfillWindow(): number | null {

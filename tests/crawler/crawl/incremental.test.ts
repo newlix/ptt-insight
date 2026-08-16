@@ -6,6 +6,7 @@ import {
   type TestEnv,
 } from "./testutil.ts";
 import { processBoardIncremental } from "../../../src/crawler/crawl/incremental.ts";
+import { indexMetaChanged } from "../../../src/crawler/crawl/backfill.ts";
 
 const envs: TestEnv[] = [];
 afterEach(() => {
@@ -159,4 +160,55 @@ test("incremental: 404 on re-fetch marks deleted", async () => {
   await processBoardIncremental(e.fetcher, e.store, fresh);
 
   expect(e.store.getArticleByBoardUrlID(board.id, "M.1000000000.A.AAA")!.deletedAt).not.toBeNull();
+});
+
+test("incremental: mark-only change persists without article refetch", async () => {
+  let articleHits = 0;
+  const e = env((req) => {
+    const path = new URL(req.url).pathname;
+    if (path === "/bbs/TestBoard/index.html") {
+      return new Response(idxHTML("5").replace('<div class="mark"></div>', '<div class="mark">!</div>'));
+    }
+    if (path === "/bbs/TestBoard/M.1000000000.A.AAA.html") {
+      articleHits++;
+      return new Response(cannedArticleAAA);
+    }
+    return new Response("not found", { status: 404 });
+  });
+
+  const board = e.store.upsertBoard({ name: "TestBoard" });
+  e.store.insertArticle({
+    boardId: board.id,
+    urlId: "M.1000000000.A.AAA",
+    urlTimestamp: 1000000000,
+    postedAt: null,
+    title: "Article One",
+    author: null,
+    content: null,
+    ip: null,
+    mark: null,
+    nrecRaw: "5",
+    pushCount: null,
+    booCount: null,
+    neutralCount: null,
+    netCount: null,
+  });
+
+  await processBoardIncremental(e.fetcher, e.store, board, undefined, 3);
+
+  const updated = e.store.getArticleByBoardUrlID(board.id, "M.1000000000.A.AAA")!;
+  expect(updated.mark).toBe("!"); // gate tripped by mark alone → written
+  expect(articleHits).toBe(0); // nrec unchanged → no article refetch
+});
+
+test("indexMetaChanged: no-op rewrite gate", () => {
+  const mk = (nrecRaw: string | null, mark: string | null) =>
+    ({ nrecRaw, mark }) as import("../../../src/db/types.ts").Article;
+  const ent = (nrecRaw: string, mark: string) =>
+    ({ nrecRaw, mark }) as import("../../../src/crawler/ptt/types.ts").IndexEntry;
+
+  expect(indexMetaChanged(mk("5", null), ent("5", ""))).toBe(false); // unchanged
+  expect(indexMetaChanged(mk(null, "M"), ent("", "M"))).toBe(false); // empty == absent
+  expect(indexMetaChanged(mk("5", null), ent("10", ""))).toBe(true); // nrec changed
+  expect(indexMetaChanged(mk("5", null), ent("5", "!"))).toBe(true); // mark changed
 });

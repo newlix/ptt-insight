@@ -88,47 +88,6 @@ export function splitPinned(articles: ArticleCard[]): { pinned: ArticleCard[]; n
   return { pinned, normal };
 }
 
-export function splitLines(s: string | null): string[] {
-  if (!s) return [];
-  return s
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l !== "");
-}
-
-// --- badge data (semantic class names; colors live in app.css) ---
-
-export interface Badge {
-  text: string;
-  cls: string;
-}
-
-export function netBadge(n: number | null): Badge {
-  if (n === null) return { text: "—", cls: "net-nil" };
-  if (n >= 100) return { text: "爆", cls: "net-boom" };
-  if (n > 0) return { text: String(n), cls: "net-pos" };
-  if (n < 0) return { text: String(n), cls: "net-neg" };
-  return { text: "0", cls: "net-nil" };
-}
-
-export function sentimentBadge(s: string): Badge {
-  let cls = "badge-neutral";
-  if (s === "正面") cls = "badge-pos";
-  else if (s === "負面") cls = "badge-neg";
-  return { text: s, cls };
-}
-
-export function controversyBadge(c: string): Badge {
-  switch (c) {
-    case "高":
-      return { text: "🔥 爭議", cls: "badge-neg" };
-    case "中":
-      return { text: "⚡ 有討論", cls: "badge-warn" };
-    default:
-      return { text: "・一面倒", cls: "badge-neutral" };
-  }
-}
-
 // nrec color from the crawler's nrec_raw (PTT display value):
 // 爆/X* → red, 1-9 → green, 10-99 → yellow (PTT terminal convention).
 export function nrecClass(raw: string | null): string {

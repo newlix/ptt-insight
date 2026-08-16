@@ -16,6 +16,7 @@ export interface ServerOptions {
   db: DB;
   pageSize: number;
   hot: HotBoardsCache;
+  minNet?: number; // WORKER_MIN_NET — keeps /healthz "total" consistent with the worker's claim threshold
 }
 
 const html = (body: string, status = 200): Response =>
@@ -111,7 +112,7 @@ export function createServer(opts: ServerOptions) {
 
       // -- /healthz --
       if (path === "/healthz") {
-        const stats = insightStats(opts.db);
+        const stats = insightStats(opts.db, opts.minNet ?? 20);
         return new Response(`{"status":"ok","analyzed":${stats.analyzed},"total":${stats.total}}`, {
           headers: { "Content-Type": "application/json" },
         });
@@ -136,9 +137,9 @@ function renderBoard(opts: ServerOptions, boardName: string, page: number): Resp
   const board = repo.getBoardByName(opts.db, boardName);
   if (!board) return notCollected(boardName);
   const p = page < 1 ? 1 : page;
-  const articles = repo.listBoardArticles(opts.db, board.id, opts.pageSize, (p - 1) * opts.pageSize);
   const total = totalPages(board.articleCount, opts.pageSize);
   if (p > total) return notFound();
+  const articles = repo.listBoardArticles(opts.db, board.id, opts.pageSize, (p - 1) * opts.pageSize);
   return html(pttBoardPage(board, articles, p, total));
 }
 

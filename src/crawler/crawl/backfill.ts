@@ -1,7 +1,8 @@
 import { Fetcher, NotFoundError } from "../ptt/fetcher.ts";
 import { parseIndexPage } from "../ptt/index_parser.ts";
 import { parseArticlePage } from "../ptt/article_parser.ts";
-import type { Board } from "../../db/types.ts";
+import type { Board, Article } from "../../db/types.ts";
+import { emptyToNull } from "../../db/types.ts";
 import type { Store } from "../../db/store.ts";
 import type { IndexEntry } from "../ptt/types.ts";
 import { urlIdTimestamp } from "../ptt/url.ts";
@@ -248,6 +249,15 @@ export function nrecChanged(stored: string | null, entry: IndexEntry): boolean {
   return stored !== entry.nrecRaw;
 }
 
+// indexMetaChanged reports whether the stored article's index-page metadata
+// (nrec_raw or mark) differs from the current index entry — the only cases
+// where rewriting the row carries information. Skipping no-op UPDATEs saves
+// tens of writes per board check across ~20K boards (single-writer WAL).
+export function indexMetaChanged(existing: Article, entry: IndexEntry): boolean {
+  if (nrecChanged(existing.nrecRaw, entry)) return true;
+  return emptyToNull(entry.mark) !== existing.mark;
+}
+
 // updateArticlePushes re-fetches an article and updates its pushes.
 export async function updateArticlePushes(
   fetcher: Fetcher,
@@ -289,9 +299,4 @@ export async function updateArticlePushes(
 // updateNrecOnly updates just the nrec_raw from the index page (no full fetch).
 export function updateNrecOnly(store: Store, boardId: number, entry: IndexEntry): void {
   store.updateArticleFromIndex(boardId, entry.urlId, emptyToNull(entry.nrecRaw), emptyToNull(entry.mark));
-}
-
-function emptyToNull(s: string): string | null {
-  const t = s.trim();
-  return t === "" ? null : t;
 }

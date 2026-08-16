@@ -69,7 +69,7 @@ test("repo roundtrip: pending claim → store → stats", () => {
   expect(claimPendingArticles(db, 10, 20)).toEqual([]);
 
   // card join sees the insight
-  const cards = repo.listHotArticles(db, 10, 0);
+  const cards = repo.listBoardArticles(db, 1, 10, 0);
   const card = cards.find((c) => c.urlId === "M.1.A.HOT")!;
   expect(card.hasInsight).toBe(true);
   expect(card.tldr).toBe("摘要");
@@ -85,7 +85,8 @@ test("repo roundtrip: pending claim → store → stats", () => {
   // stats: analyzed counts insight, total counts eligible articles
   const stats = insightStats(db);
   expect(stats.analyzed).toBe(1);
-  expect(stats.total).toBe(1);
+  expect(stats.total).toBe(1); // default minNet=20: cold(5) excluded
+  expect(insightStats(db, 5).total).toBe(2); // lowered threshold includes cold
 
   // upsert path: re-store overwrites
   storeInsight(db, { ...result, tldr: "v2" });

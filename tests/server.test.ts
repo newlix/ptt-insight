@@ -17,7 +17,7 @@ function seedDB(): DB {
   // 35 articles → 2 pages at PAGE_SIZE=30
   const ins = db.prepare(
     `INSERT INTO articles (board_id, url_id, url_timestamp, posted_at, title, author, content, ip, nrec_raw, net_count, push_count, boo_count)
-     VALUES (1, ?, ?, ?, ?, 'author1', 'body text here', '1.2.3.4', '5', 5, 5, 0)`,
+     VALUES (1, ?, ?, ?, ?, 'author1', 'body text here long enough to count', '1.2.3.4', '5', 5, 5, 0)`,
   );
   const insPush = db.prepare(`INSERT INTO pushes (article_id, seq, tag, user_id, content, ipdatetime) VALUES (?, 0, '推', 'u1', 'good', '1.1.1.1 01/01 12:00')`);
   for (let i = 1; i <= 35; i++) {
@@ -111,6 +111,13 @@ test("GET /b/{board} renders board, unknown board → not-collected page", async
   expect(await unknown.text()).toContain("此看板尚未收錄：NoSuchBoard");
 });
 
+test("GET /b/{board}?page out of range → 404, in range → 200", async () => {
+  // 35 articles at PAGE_SIZE=30 → 2 pages
+  expect((await GET("/b/TestBoard?page=2")).status).toBe(200);
+  expect((await GET("/b/TestBoard?page=3")).status).toBe(404); // p > total early return
+  expect((await GET("/b/TestBoard?page=0")).status).toBe(200); // clamped to 1
+});
+
 test("GET /a/{id} renders article by DB id", async () => {
   const resp = await GET("/a/1");
   expect(resp.status).toBe(200);
@@ -134,6 +141,23 @@ test("GET /healthz returns JSON stats", async () => {
   const json = JSON.parse(await resp.text()) as { status: string; analyzed: number; total: number };
   expect(json.status).toBe("ok");
   expect(json.analyzed).toBe(0);
+  expect(json.total).toBe(0); // seeded net_count=5 below default minNet=20
+});
+
+test("GET /healthz honors configured minNet", async () => {
+  const app5 = createServer({
+    db,
+    pageSize: 30,
+    hot: new HotBoardsCache(`http://localhost:${fixtureServer.port}`, 60_000),
+    minNet: 5,
+  });
+  try {
+    const resp = await app5.handler(new Request("http://localhost/healthz"));
+    const json = JSON.parse(await resp.text()) as { total: number };
+    expect(json.total).toBe(35); // all 35 seeded articles pass the lowered threshold
+  } finally {
+    app5.stop();
+  }
 });
 
 test("GET /static/app.css serves plain CSS", async () => {

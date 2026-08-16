@@ -11,6 +11,7 @@ import {
   updateArticlePushes,
   updateNrecOnly,
   nrecChanged,
+  indexMetaChanged,
 } from "./backfill.ts";
 
 // runIncremental runs the adaptive-backoff incremental crawl loop.
@@ -78,9 +79,11 @@ export async function processBoardIncremental(
         await updateArticlePushes(fetcher, store, board, entry, signal);
       }
 
-      // Update nrec from index (cheap, always do it)
-      updateNrecOnly(store, board.id, entry);
-    },
+      // Rewrite index metadata only when it actually changed — no-op UPDATEs
+      // would otherwise dominate write volume across ~20K boards per sweep.
+      if (indexMetaChanged(existing, entry)) {
+        updateNrecOnly(store, board.id, entry);
+      }    },
     signal,
   );
 

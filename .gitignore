@@ -4,3 +4,4 @@ ptt.db*
 *.db-wal
 *.db-shm
 backups/
+.fable/

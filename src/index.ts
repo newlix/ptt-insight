@@ -127,13 +127,15 @@ async function main(): Promise<void> {
     tasks.push(runIncremental(incrementalFetcher, store, sig, crawlConcurrency));
 
     // Periodic stats logging + heartbeat (Docker/systemd healthcheck reads /tmp/heartbeat)
+    const statsBoards = db.prepare("SELECT count(*) AS c FROM boards");
+    const statsArticles = db.prepare("SELECT count(*) AS c FROM articles");
+    const statsPushes = db.prepare("SELECT count(*) AS c FROM pushes");
+    const statsBackfillDone = db.prepare("SELECT count(*) AS c FROM boards WHERE backfill_complete = 1");
     const statsTimer = setInterval(() => {
-      const boards = (db.prepare("SELECT count(*) AS c FROM boards").get() as { c: number }).c;
-      const articles = (db.prepare("SELECT count(*) AS c FROM articles").get() as { c: number }).c;
-      const pushes = (db.prepare("SELECT count(*) AS c FROM pushes").get() as { c: number }).c;
-      const backfillDone = (
-        db.prepare("SELECT count(*) AS c FROM boards WHERE backfill_complete = 1").get() as { c: number }
-      ).c;
+      const boards = (statsBoards.get() as { c: number }).c;
+      const articles = (statsArticles.get() as { c: number }).c;
+      const pushes = (statsPushes.get() as { c: number }).c;
+      const backfillDone = (statsBackfillDone.get() as { c: number }).c;
       console.log(`stats: ${boards} boards (${backfillDone} backfilled), ${articles} articles, ${pushes} pushes`);
       writeHeartbeat();
     }, 60_000);
@@ -186,6 +188,7 @@ async function main(): Promise<void> {
       db,
       pageSize,
       hot: new HotBoardsCache(hotboardsURL, hotboardsTTL * 1000),
+      minNet: workerMinNet,
     });
     const port = addr.startsWith(":") ? Number(addr.slice(1)) : Number(addr);
     server = Bun.serve({
@@ -208,4 +211,7 @@ async function main(): Promise<void> {
   db.close();
 }
 
-main();
+main().catch((e) => {
+  console.error("fatal:", e);
+  process.exit(1);
+});

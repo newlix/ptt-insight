@@ -7,9 +7,6 @@ import {
   splitPinned,
   parseIndexSlug,
   totalPages,
-  netBadge,
-  sentimentBadge,
-  controversyBadge,
   nuserColor,
   esc,
 } from "../src/views/helpers.ts";
@@ -107,21 +104,7 @@ test("totalPages", () => {
   }
 });
 
-test("badges", () => {
-  expect(netBadge(null)).toEqual({ text: "—", cls: "net-nil" });
-  expect(netBadge(150)).toEqual({ text: "爆", cls: "net-boom" });
-  expect(netBadge(5)).toEqual({ text: "5", cls: "net-pos" });
-  expect(netBadge(-3)).toEqual({ text: "-3", cls: "net-neg" });
-  expect(netBadge(0)).toEqual({ text: "0", cls: "net-nil" });
-
-  expect(sentimentBadge("正面").cls).toBe("badge-pos");
-  expect(sentimentBadge("負面").cls).toBe("badge-neg");
-  expect(sentimentBadge("中立").cls).toBe("badge-neutral");
-
-  expect(controversyBadge("高").text).toBe("🔥 爭議");
-  expect(controversyBadge("中").cls).toBe("badge-warn");
-  expect(controversyBadge("低").text).toBe("・一面倒");
-
+test("nuserColor from upstream class", () => {
   expect(nuserColor("hl f1")).toBe("c-f1");
   expect(nuserColor("hl f3")).toBe("c-f3");
   expect(nuserColor("hl")).toBe("c-white");

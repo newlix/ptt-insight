@@ -59,7 +59,7 @@
 | `ADDR` | `:8088` | web 監聽位址（綁 127.0.0.1） |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | — | 主分析 provider（正式：Z.AI glm-5.2） |
 | `FALLBACK_LLM_BASE_URL` / `_API_KEY` / `_MODEL` | — | content-filter 重試 provider（正式：DeepSeek v4-pro） |
-| `WORKER_BATCH` / `WORKER_MIN_NET` | `10` / `20` | 每批篇數 / 最低 net_count |
+| `WORKER_BATCH` / `WORKER_MIN_NET` | `10` / `20` | 每批篇數 / 最低 net_count（`/healthz` 的 total 同此門檻） |
 | `WORKER_INTERVAL` | `0` | `0`=連續；`5m`=每 5 分鐘一批 |
 | `WORKER_OFFPEAK` | `1` | 避開平日 14-18 點 UTC+8 |
 | `INSIGHT_REFRESH_DAYS` | `7` | 推文有變的重分析窗口；`0` = 關閉 |
@@ -76,13 +76,13 @@
 ```
 src/index.ts               — 合併入口（config + migration + 三子系統 + stats/heartbeat）
 src/db/                    — driver + migrations + crawler query 層（queries/、store、types）
-src/crawler/ptt/           — PTT 協定層：index/article/cls/hotboards parser、fetcher、rate limiter、nrec、url
+src/crawler/ptt/           — PTT 協定層：index/article/cls/hotboards parser、fetcher、rate limiter、url
 src/crawler/crawl/         — 編排：discovery、backfill、incremental、backoff、util（mapLimit）
 src/repo/                  — 讀側查詢（articles/boards 卡片、insights 讀寫）
 src/llm/client.ts          — OpenAI-compatible client（retry + content-filter 偵測）
 src/insight/               — prompt + JSON 解析 + worker（offpeak/fallback loop）
 src/server/                — Bun.serve 路由 + app.css（plain CSS）
-src/views/                 — HTML 模板（PTT 黑底風 + 淺色 /boards）+ helpers（esc/badge/Taipei 時間）
+src/views/                 — HTML 模板（PTT 黑底風 + 淺色 /boards）+ helpers（esc/顏色class/Taipei 時間）
 tests/                     — in-memory SQLite + Bun.serve stub（零外部依賴）
 testdata/*.html            — 真實 PTT fixtures（parser contract；hotboards 的 nUser 是即時值，斷言要結構性）
 scripts/backup.sh          — SQLite 線上備份（wal_checkpoint + .backup + integrity_check + 7 天輪替）
@@ -91,7 +91,7 @@ scripts/backup.sh          — SQLite 線上備份（wal_checkpoint + .backup + 
 ## 測試
 
 ```bash
-bun test          # 83 tests；in-memory SQLite，不可能碰 production
+bun test          # 86 tests；in-memory SQLite，不可能碰 production
 bunx tsc --noEmit # typecheck
 ```
 

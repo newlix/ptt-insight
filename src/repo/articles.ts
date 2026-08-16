@@ -125,14 +125,6 @@ function cardQueryBody(where: string, order: string): string {
     LIMIT ? OFFSET ?`;
 }
 
-export function listHotArticles(db: DB, limit: number, offset: number): ArticleCard[] {
-  // SQLite DESC puts NULLs last — matches PG's NULLS LAST.
-  const rows = db
-    .prepare(cardQueryBody("a.deleted_at IS NULL", "a.net_count DESC, a.posted_at DESC"))
-    .all(limit, offset) as CardRow[];
-  return rows.map(toCard);
-}
-
 export function listBoardArticles(db: DB, boardId: number, limit: number, offset: number): ArticleCard[] {
   const rows = db
     .prepare(cardQueryBody("a.deleted_at IS NULL AND a.board_id = ?", "a.posted_at DESC"))

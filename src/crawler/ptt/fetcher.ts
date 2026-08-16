@@ -7,6 +7,16 @@ const DEFAULT_RETRY = 3;
 const DEFAULT_BACKOFF_MS = 1000;
 const REQUEST_TIMEOUT_MS = 30_000;
 
+// Consume an error response body so the connection returns to the pool
+// instead of waiting on an unread stream (404s are routine: deleted articles).
+async function drainBody(resp: Response): Promise<void> {
+  try {
+    await resp.body?.cancel();
+  } catch {
+    // best effort — never mask the original error path
+  }
+}
+
 // Indicates the article was deleted (HTTP 404).
 export class NotFoundError extends Error {
   constructor(url: string) {
@@ -85,15 +95,18 @@ export class Fetcher {
 
       if (resp.status >= 500) {
         lastErr = new Error(`server error: ${resp.status}`);
+        await drainBody(resp);
         await this.backoff(attempt, signal);
         continue;
       }
 
       if (resp.status === 404) {
+        await drainBody(resp);
         throw new NotFoundError(url);
       }
 
       if (resp.status >= 400) {
+        await drainBody(resp);
         throw new Error(`client error: ${resp.status} for ${url}`);
       }
 
@@ -112,7 +125,6 @@ export class Fetcher {
   private async backoff(attempt: number, signal?: AbortSignal): Promise<void> {
     await abortableSleep(this.baseBackoffMs * (1 << attempt), signal);
   }
-
   // fetchIndexPage fetches a board index page.
   // page=0 fetches the latest page (index.html); page=N fetches indexN.html.
   fetchIndexPage(board: string, page: number, signal?: AbortSignal): Promise<string> {
