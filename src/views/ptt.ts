@@ -21,6 +21,7 @@ export function pttLayout(title: string, board: string, children: string): strin
 ${boardCrumb}
 <a href="https://www.ptt.cc/about.html" class="topbar-link topbar-right">關於我們</a>
 <a href="https://www.ptt.cc/contact.html" class="topbar-link topbar-right">聯絡資訊</a>
+<form action="/search" method="get" class="topbar-search topbar-right"><input class="topbar-search-input" type="text" name="q" placeholder="實體搜尋"/></form>
 </div></div>
 ${children}
 </body>

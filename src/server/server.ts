@@ -8,6 +8,9 @@ import { parseIndexSlug, totalPages } from "../views/helpers.ts";
 import { hotBoardsPage, boardNotCollectedPage } from "../views/ptt.ts";
 import { pttBoardPage } from "../views/board.ts";
 import { pttArticlePage } from "../views/article.ts";
+import { searchPage } from "../views/search.ts";
+import { entityPage } from "../views/entity.ts";
+import { searchEntities, entityTimeline, entityArticles } from "../repo/entities.ts";
 import { boardsListPage } from "../views/pages.ts";
 
 const APP_CSS = readFileSync(join(import.meta.dir, "app.css"), "utf-8");
@@ -41,6 +44,14 @@ export function createServer(opts: ServerOptions) {
   const navTimer = setInterval(refreshNav, 300_000);
   navTimer.unref?.();
 
+  function safeDecode(s: string): string {
+    try {
+      return decodeURIComponent(s);
+    } catch {
+      return s;
+    }
+  }
+
   async function handler(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const path = url.pathname;
@@ -62,6 +73,23 @@ export function createServer(opts: ServerOptions) {
           console.error("fetch hot boards:", e);
           return html("hot boards unavailable", 503);
         }
+      }
+
+      // -- entity search --
+      if (path === "/search") {
+        const q = url.searchParams.get("q")?.trim() ?? "";
+        return html(searchPage(q, searchEntities(opts.db, q, 30)));
+      }
+      const ent = path.match(/^\/e\/([^/]+)$/);
+      if (ent) {
+        const raw = safeDecode(ent[1]!);
+        const hits = searchEntities(opts.db, raw, 1);
+        const timeline = entityTimeline(opts.db, raw, 60);
+        const articles = entityArticles(opts.db, raw, 50);
+        if (hits.length === 0 && timeline.length === 0 && articles.length === 0) {
+          return html(searchPage(raw, []), 404);
+        }
+        return html(entityPage(hits[0]?.name ?? raw, hits[0]?.kind ?? "其他", timeline, articles));
       }
 
       // -- /bbs/{board}/{slug}: PTT-shape URLs --

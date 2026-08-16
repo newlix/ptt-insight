@@ -1,4 +1,5 @@
 import type { DB } from "../db/sqlite.ts";
+import { syncEntityRefs } from "./entities.ts";
 import { nowSecs } from "../db/sqlite.ts";
 import { parseTags, type Push } from "./articles.ts";
 
@@ -140,36 +141,37 @@ export function claimFilteredArticles(db: DB, limit: number, minAgeSecs = 0): Pe
 }
 
 export function storeInsight(db: DB, r: InsightResult): void {
-  db.prepare(
-    `INSERT INTO article_insights
-       (article_id, tldr, community_take, top_comments, sentiment, controversy, tags, model, prompt_tokens, completion_tokens,
-        schema_ver, article_type, entities, ad_likelihood, factuality, ai_generated, push_stance, push_facts, qa_summary)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT (article_id) DO UPDATE SET
-       tldr              = excluded.tldr,
-       community_take    = excluded.community_take,
-       top_comments      = excluded.top_comments,
-       sentiment         = excluded.sentiment,
-       controversy       = excluded.controversy,
-       tags              = excluded.tags,
-       model             = excluded.model,
-       prompt_tokens     = excluded.prompt_tokens,
-       completion_tokens = excluded.completion_tokens,
-       generated_at      = unixepoch(),
-       error             = NULL,
-       schema_ver        = 2,
-       article_type      = excluded.article_type,
-       entities          = excluded.entities,
-       ad_likelihood     = excluded.ad_likelihood,
-       factuality        = excluded.factuality,
-       ai_generated      = excluded.ai_generated,
-       push_stance       = excluded.push_stance,
-       push_facts        = excluded.push_facts,
-       qa_summary        = excluded.qa_summary`,
-  ).run(
-    r.articleId,
-    r.tldr,
-    r.communityTake,
+  const tx = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO article_insights
+         (article_id, tldr, community_take, top_comments, sentiment, controversy, tags, model, prompt_tokens, completion_tokens,
+          schema_ver, article_type, entities, ad_likelihood, factuality, ai_generated, push_stance, push_facts, qa_summary)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (article_id) DO UPDATE SET
+         tldr              = excluded.tldr,
+         community_take    = excluded.community_take,
+         top_comments      = excluded.top_comments,
+         sentiment         = excluded.sentiment,
+         controversy       = excluded.controversy,
+         tags              = excluded.tags,
+         model             = excluded.model,
+         prompt_tokens     = excluded.prompt_tokens,
+         completion_tokens = excluded.completion_tokens,
+         generated_at      = unixepoch(),
+         error             = NULL,
+         schema_ver        = 2,
+         article_type      = excluded.article_type,
+         entities          = excluded.entities,
+         ad_likelihood     = excluded.ad_likelihood,
+         factuality        = excluded.factuality,
+         ai_generated      = excluded.ai_generated,
+         push_stance       = excluded.push_stance,
+         push_facts        = excluded.push_facts,
+         qa_summary        = excluded.qa_summary`,
+    ).run(
+      r.articleId,
+      r.tldr,
+      r.communityTake,
     r.topComments,
     r.sentiment,
     r.controversy,
@@ -185,7 +187,10 @@ export function storeInsight(db: DB, r: InsightResult): void {
     JSON.stringify(r.pushStance),
     r.pushFacts,
     r.qaSummary,
-  );
+    );
+    syncEntityRefs(db, r.articleId, r.entities);
+  });
+  tx();
 }
 
 export function markInsightError(db: DB, articleId: number, errMsg: string): void {

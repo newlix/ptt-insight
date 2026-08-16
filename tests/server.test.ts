@@ -101,8 +101,7 @@ test("GET /bbs/{board}/{url_id}.html renders article with pushes", async () => {
   expect(body).toContain(": good");
 });
 
-test("GET /bbs/{board}/{url_id}.html renders insight v2 fields", async () => {
-  const aid = (db.prepare(`SELECT id FROM articles WHERE url_id = 'M.1001.A.A1'`).get() as { id: number }).id;
+test("GET /bbs/{board}/{url_id}.html renders insight v2 fields", async () => {  const aid = (db.prepare(`SELECT id FROM articles WHERE url_id = 'M.1001.A.A1'`).get() as { id: number }).id;
   db.prepare(
     `INSERT INTO article_insights
        (article_id, tldr, community_take, top_comments, sentiment, controversy, tags, model, prompt_tokens, completion_tokens,
@@ -124,6 +123,37 @@ test("GET /bbs/{board}/{url_id}.html renders insight v2 fields", async () => {
   expect(body).not.toContain("[人寫]");
 
   // shared seeded db — remove the insight row so /healthz counts stay pristine
+  db.prepare(`DELETE FROM article_insights WHERE article_id = ?`).run(aid);
+});
+
+test("GET /search and /e/:name serve entity pages", async () => {
+  const aid = (db.prepare(`SELECT id FROM articles WHERE url_id = 'M.1001.A.A1'`).get() as { id: number }).id;
+  db.prepare(
+    `INSERT INTO article_insights
+       (article_id, tldr, community_take, sentiment, controversy, tags, model, schema_ver, entities)
+     VALUES (?, 'GTA 相關摘要', 'c', '正面', '低', '[]', 'm', 2, ?)`,
+  ).run(aid, JSON.stringify([{ name: "GTA6", type: "遊戲" }]));
+  db.prepare(`INSERT INTO entity_refs (name_norm, name, kind, article_id) VALUES ('gta6', 'GTA6', '遊戲', ?)`).run(aid);
+
+  const s = await GET("/search?q=gta");
+  expect(s.status).toBe(200);
+  const sbody = await s.text();
+  expect(sbody).toContain("entity-result");
+  expect(sbody).toContain("GTA6");
+
+  const e = await GET("/e/gta6");
+  expect(e.status).toBe(200);
+  const ebody = await e.text();
+  expect(ebody).toContain("entity-timeline");
+  expect(ebody).toContain("GTA 相關摘要");
+
+  const miss = await GET("/search?q=zzzznotfound");
+  expect(await miss.text()).toContain("沒有找到");
+
+  const none = await GET("/e/zzzznotfound");
+  expect(none.status).toBe(404);
+
+  db.prepare(`DELETE FROM entity_refs WHERE article_id = ?`).run(aid);
   db.prepare(`DELETE FROM article_insights WHERE article_id = ?`).run(aid);
 });
 

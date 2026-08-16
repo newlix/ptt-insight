@@ -429,7 +429,19 @@ acceptance: `cd /home/newlix/github/newlix/ptt-insight && bun test 2>&1 | grep -
 acceptance: temp DB 跑 ≥5 篇真文章 → 每篇 schema_ver=2 且 8 新欄位非空（qa_summary 僅問卦）+ 記錄 tokens/latency
 ### 卡 9.5 — 部署 + 15min 監控（速率/credit/品質抽查）
 acceptance: `systemctl is-active --quiet ptt-insight && journalctl -u ptt-insight --no-pager | grep -q 'schema_ver=2'`（啟動行加版號）+ 速率/0 限流實測記錄
-### 卡 9.6 — 板級日報（job + 首頁區塊）
+### 卡 9.8a — entity_refs schema + repo（2026-08-16）
+migration 0005：`entity_refs(name_norm, name, kind, article_id)` PK(name_norm, article_id)
++ index name_norm + `entity_aliases(alias PK, canonical)`（v1 空 table，查詢路徑支援展開）。
+正規化 `normEntity`：NFKC + 去空白 + lowercase。`storeInsight` 同步維護 refs（transaction）。
+repo：`backfillEntityRefs`（json_each 展開）、`searchEntities`（精確→前綴→子字串三段）、
+`entityTimeline`（日聚合 + sentiment 加權）、`entityArticles`（近期文章列表）。
+acceptance: `cd /home/newlix/github/newlix/ptt-insight && bun test 2>&1 | grep -q ' 0 fail' && bunx tsc --noEmit && rg -q 'entity_refs' src/db/migrations/0005_entity_refs.sql src/repo/entities.ts`
+
+### 卡 9.8b — 搜尋頁 + 實體頁 + 部署
+路由 `GET /search?q=`、`GET /e/:name`（topbar 加搜尋框）；實體頁 = 近期文章列表
+（tldr/sentiment/爭議徽章）+ 60 天情緒時序（CSS bar，無 JS）。部署 + prod backfill +
+真實 smoke。
+acceptance: `systemctl is-active --quiet ptt-insight && curl -sf 'http://localhost:8088/search?q=<real>' | grep -q 'entity-result' && curl -sf 'http://localhost:8088/e/<real>' | grep -q 'entity-timeline'`
 ### 卡 9.7 — 被刪爆文日報
 ### 卡 9.8 — 實體搜尋 + 情緒時序
 ### 卡 9.9 — 事件群聚
