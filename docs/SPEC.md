@@ -377,3 +377,9 @@ acceptance: `test $(sudo grep -c '^WORKER_CONCURRENCY=6$' /etc/ptt-insight.env) 
 量能階梯（實測 2026-08-16 17:04-17:25）：c=12 → 16×429/5min 重度限流；c=8 → 3×429/7min 偶發；
 c=6 → 0 429、~249/hr（baseline 146/hr 的 1.7×）。Max plan 的約束是 RPM/併發上限（~6 穩態），
 不是 token quota。
+
+### 卡 8.2 — credit-aware 降速 c=6→4（2026-08-16 18:00，使用者批准）
+緣起：官方費率換算（docs.z.ai/devpack/overview.md）— credits=(in×6.9+out×24)/10,000，
+離峰 ×0.5；Max 週額度 140,000。c=6 滿載 302/hr ≈ 204K/週會撞頂（~4.8 天），
+撞頂後 error row 1h cooldown 滾雪球。目標 c=4 ≈ 201/hr ≈ 136K/週（3% 餘裕）。
+acceptance: `test $(sudo grep -c '^WORKER_CONCURRENCY=4$' /etc/ptt-insight.env) -eq 1 && journalctl -u ptt-insight --no-pager | grep -q 'batch=20 concurrency=4' && systemctl is-active --quiet ptt-insight`
