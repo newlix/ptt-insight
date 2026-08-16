@@ -3,6 +3,7 @@ import { openDB } from "./db/sqlite.ts";
 import { migrate } from "./db/migrate.ts";
 import { createStore } from "./db/store.ts";
 import { Fetcher } from "./crawler/ptt/fetcher.ts";
+import { RateLimiter, CombinedLimiter } from "./crawler/ptt/rate_limiter.ts";
 import { discoverHotBoards, discoverBoards } from "./crawler/crawl/discovery.ts";
 import { runBackfillWorker, releaseOrphanedClaims } from "./crawler/crawl/backfill.ts";
 import { runIncremental } from "./crawler/crawl/incremental.ts";
@@ -101,11 +102,18 @@ async function main(): Promise<void> {
   const tasks: Promise<void>[] = [];
 
   if (runCrawler) {
-    // Split rate limit: incremental gets 40% (guaranteed, never starved by
-    // backfill), backfill+discovery gets 60%.
-    const incrementalRate = rateLimit * 0.4;
-    const backfillRate = rateLimit * 0.6;
-    const backfillFetcher = new Fetcher(backfillRate);
+    // Rate budget: ONE global bucket for the whole politeness cap, plus a
+    // sub-bucket capping backfill+discovery at 60%. Incremental draws only
+    // from the global bucket: it keeps a guaranteed ~40% share when backfill
+    // is busy, and automatically borrows the unused backfill share when
+    // backfill idles. Total stays capped at RATE_LIMIT either way.
+    const globalLimiter = new RateLimiter(rateLimit, Math.max(1, Math.floor(rateLimit)));
+    const backfillCap = rateLimit * 0.6;
+    const backfillLimiter = new CombinedLimiter([
+      new RateLimiter(backfillCap, Math.max(1, Math.floor(backfillCap))),
+      globalLimiter,
+    ]);
+    const backfillFetcher = new Fetcher(backfillCap, { limiter: backfillLimiter });
 
     console.log("discovering hot boards...");
     try {
@@ -117,10 +125,10 @@ async function main(): Promise<void> {
     const released = releaseOrphanedClaims(store);
     if (released > 0) console.log(`released ${released} orphaned backfill claim(s) from previous run`);
 
-    const incrementalFetcher = new Fetcher(incrementalRate);
+    const incrementalFetcher = new Fetcher(rateLimit, { limiter: globalLimiter });
     console.log(
-      `crawler starting (incremental: ${incrementalRate.toFixed(1)} req/s, ` +
-        `backfill: ${backfillRate.toFixed(1)} req/s, workers: ${backfillWorkers}, ` +
+      `crawler starting (global: ${rateLimit.toFixed(1)} req/s shared, ` +
+        `backfill capped: ${backfillCap.toFixed(1)} req/s, workers: ${backfillWorkers}, ` +
         `batch: ${batchPages} pages, window-step: ${windowDays}d, ` +
         `board-check: ${incrementalMinSecs}s-${incrementalMaxSecs}s)`,
     );

@@ -112,6 +112,10 @@ export async function backfillBoard(
         store.completeBackfill(board.id);
         console.log(`backfill done: ${board.name} (${pagesCrawled} pages, ${articlesNew} articles)`);
       } else {
+        // Breadth-first pause: release the claim so the board stays claimable
+        // (resume via last_backfill_page). Holding it would idle the whole
+        // backfill subsystem until the 6h exclusion expires.
+        store.releaseBackfillClaim(board.id);
         console.log(
           `backfill batch: ${board.name} (${pagesCrawled} pages, ${articlesNew} articles), paused at page ${endPage}`,
         );

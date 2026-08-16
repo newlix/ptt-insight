@@ -30,7 +30,7 @@
 ## Crawler 策略
 
 - **增量**：每板 adaptive backoff（有新文 → 2min，`INCREMENTAL_MIN_SECS` 可調；沒有 → interval×2 上限 7 天，`INCREMENTAL_MAX_SECS` 可調）；index 頁 `nrec_raw` 與 DB 比對，變了才重抓文章頁（省 80-90% request）
-- **Backfill window sweep**：只抓熱門板（`is_hot`），全域 90 天水位批次（`window_bottom` 全部到達才 `AdvanceBackfillWindow` 減 90 天）；每板 `window_floor` 記連續覆蓋最舊文章（URL timestamp 免抓全文）；breadth-first（`BACKFILL_BATCH_PAGES` 換板）
+- **Backfill window sweep**：只抓熱門板（`is_hot`），全域 90 天水位批次（`window_bottom` 全部到達才 `AdvanceBackfillWindow` 減 90 天）；每板 `window_floor` 記連續覆蓋最舊文章（URL timestamp 免抓全文）；breadth-first（`BACKFILL_BATCH_PAGES` 換板）；**claim 生命週期**：批次暫停/達邊界即釋放（resume 靠 `last_backfill_page`），錯誤保留 6h 排斥當壞板 cool-off；水位前進要求所有未完熱板到位，故殭屍 claim 會讓全系統 idle——啟動 `releaseAllBackfillClaims` 是保險
 - **刪除偵測（index 缺席法）**：文章比 index 首頁最舊文新卻不在頁上 → 不可能捲頁 → 抓前一頁複驗（在前一頁=活著；兩頁都缺席且比前一頁最舊新=確認刪除 soft delete；更舊=灰色地帶不動）
 - **孤兒 claim**：SIGTERM 中斷會留 `backfill_claimed_at`，6h exclusion 會讓 backfill 停擺 → 啟動時 `releaseAllBackfillClaims()`（本服務是唯一 writer，起動時任何 claim 必是孤兒）
 - **看板發現**：`/bbs/hotboards.html`（~150 熱門板）+ 背景 `/cls/1` 遞迴全樹（~20K 板）
@@ -49,7 +49,7 @@
 |---|---|---|
 | `DB_PATH` | `ptt.db` | SQLite 路徑（正式：`~/ptt-insight/ptt.db`） |
 | `RUN_CRAWLER` / `RUN_WORKER` / `RUN_WEB` | `1` | 子系統開關 |
-| `RATE_LIMIT` | `3` | 爬蟲全域速率（incremental 40% / backfill 60%） |
+| `RATE_LIMIT` | `3` | 爬蟲全域速率（單一全域桶；backfill+discovery 另被 60% 子桶 cap，incremental 保證 ~40%、backfill 閒置時可借滿全域） |
 | `CRAWL_CONCURRENCY` | `3` | 單頁內文章抓取並行數（全域 rate limiter 仍 cap） |
 | `INCREMENTAL_MIN_SECS` | `120` | 活躍板檢查 floor（有新文 → 重置至此；`2m` Go duration 亦可） |
 | `INCREMENTAL_MAX_SECS` | `604800` | 安靜板 backoff 上限（7 天） |
@@ -93,7 +93,7 @@ scripts/backup.sh          — SQLite 線上備份（wal_checkpoint + .backup + 
 ## 測試
 
 ```bash
-bun test          # 88 tests；in-memory SQLite，不可能碰 production
+bun test          # 92 tests；in-memory SQLite，不可能碰 production
 bunx tsc --noEmit # typecheck
 ```
 
@@ -117,7 +117,7 @@ bunx tsc --noEmit # typecheck
 ## 已知坑與教訓
 
 - **`trg_boards_set_updated_at` trigger 會讓 `run().changes` 虛報兩倍**（trigger 內 UPDATE 也計入）— 需要真實計數就 SELECT 先數
-- **單事件循環是吞吐瓶頸**：cheerio parse + 同步 SQLite 寫在事件循環上序列化；`CRAWL_CONCURRENCY=3` 只移除網路閒置（1.48→1.73/s，預算 5/s）。再往上要 batch writes 或拆 process（未做）
+- **單事件循環是吞吐瓶頸**：cheerio parse + 同步 SQLite 寫在事件循環上序列化；`CRAWL_CONCURRENCY=3` 只移除網路閒置（1.48→1.73/s，預算 5/s）。再往上要 batch writes 或拆 process（未做）。**但瓶頸是分檔的**（2026-08-16 實測）：incremental 為主的時段 CPU 幾乎 0%、真正卡的是排程（殭屍 claim 卡水位前進、靜態速率分帳借不過去）——已修（claim 暫停即釋放 + 雙桶讓渡）；純 backfill 突發時事件循環上限才會觸頂
 - **HTML 模板一律 `esc()`**（templ 自動轉義的手動等價物）；attribute 位置也要
 - SQLite `DESC` 天然 NULLS last；by-name 取 row 時**表達式欄位必須 alias**（`AS has_insight`）
 - 測試曾連 production DB + TRUNCATE 清空 34 小時資料（Go 時代）— 這是全面改 in-memory 測試的原因

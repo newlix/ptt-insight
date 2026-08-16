@@ -1,4 +1,4 @@
-import { RateLimiter, abortableSleep } from "./rate_limiter.ts";
+import { RateLimiter, abortableSleep, type Limiter } from "./rate_limiter.ts";
 
 export const PTT_BASE_URL = "https://www.ptt.cc";
 export const USER_AGENT = "ptt-crawler/1.0";
@@ -45,6 +45,7 @@ export interface FetcherOptions {
   baseURL?: string; // override for tests
   maxRetries?: number;
   baseBackoffMs?: number;
+  limiter?: Limiter; // override the default per-Fetcher bucket (shared/global limits)
 }
 
 // Fetcher handles HTTP requests to PTT with rate limiting, retry, and the
@@ -53,13 +54,13 @@ export class Fetcher {
   readonly baseURL: string;
   readonly maxRetries: number;
   readonly baseBackoffMs: number;
-  private readonly limiter: RateLimiter;
+  private readonly limiter: Limiter;
 
   constructor(reqPerSec: number, opts: FetcherOptions = {}) {
     this.baseURL = opts.baseURL ?? PTT_BASE_URL;
     this.maxRetries = opts.maxRetries ?? DEFAULT_RETRY;
     this.baseBackoffMs = opts.baseBackoffMs ?? DEFAULT_BACKOFF_MS;
-    this.limiter = new RateLimiter(reqPerSec, Math.max(1, Math.floor(reqPerSec)));
+    this.limiter = opts.limiter ?? new RateLimiter(reqPerSec, Math.max(1, Math.floor(reqPerSec)));
   }
 
   // fetch retrieves a URL and returns its body as text.

@@ -170,3 +170,40 @@ test("nrecChanged table", () => {
   expect(nrecChanged(null, entryOf("5"))).toBe(true); // stored nil entry nonempty
   expect(nrecChanged("", entryOf("5"))).toBe(true); // stored empty entry nonempty
 });
+
+test("backfillBoard releases claim on batch pause (not just at boundary)", async () => {
+  const e = env(
+    pathServer({
+      "/bbs/TestBoard/index.html": cannedIndexPage, // latest (page 2)
+      "/bbs/TestBoard/index2.html": cannedIndexPage,
+      "/bbs/TestBoard/index1.html": cannedIndex1Page,
+      "/bbs/TestBoard/M.1000000000.A.AAA.html": cannedArticleAAA,
+      "/bbs/TestBoard/M.2000000000.A.BBB.html": cannedArticleBBB,
+    }),
+  );
+
+  const created = e.store.upsertBoard({ name: "TestBoard" });
+  e.store.markBoardsHot(["TestBoard"]);
+  // Production always has the window_bottom meta row (migration-seeded to a
+  // recent date); canned pages use 2001-era timestamps, so pin the boundary
+  // low enough that this board reads as mid-window (floor > bottom).
+  e.db
+    .prepare("UPDATE backfill_meta SET value = 1 WHERE key = 'window_bottom'")
+    .run();
+
+  // Simulate the worker claiming the board before its batch.
+  const claimed = e.store.claimBackfillBoard();
+  expect(claimed).not.toBeNull();
+  expect(claimed!.backfillClaimedAt).not.toBeNull();
+
+  // batchPages=1 on a 2-page board: crawls page 2 only, pauses (endPage=2 > 1).
+  await backfillBoard(e.fetcher, e.store, claimed!, 1, 0, undefined, 3);
+
+  const got = e.store.getBoardByName("TestBoard")!;
+  expect(got.backfillComplete).toBe(false);
+  expect(got.lastBackfillPage).toBe(2);
+  // Claim released — board immediately re-claimable instead of 6h-excluded.
+  expect(got.backfillClaimedAt).toBeNull();
+  const reclaimed = e.store.claimBackfillBoard();
+  expect(reclaimed).not.toBeNull();
+});

@@ -45,6 +45,55 @@ systemctl restart → journalctl 確認啟動行帶新 interval）。
 
 ---
 
+# 任務 5 — 排程三修：backfill 卡死 + 份額讓渡（2026-08-16）
+
+## 緣起（[measured] 本 session 診斷）
+
+使用者問「管線卡在哪」，實測發現（CPU 0 ticks/5s、RTT 16ms、吞吐 ~1.6/5 req/s）：
+1. **backfill 全子系統閒置**：156 熱板中 154 已達水位邊界，2 板（C_Chat、Marginalman）
+   在 10:47 領 claim、掃完 200 頁批次後 **claim 未釋放**（`backfillBoard` 只有
+   reachedBoundary 路徑 release，breadth-first 暫停路徑不釋放，backfill.ts:101）→
+   6h 排斥鎖卡到 16:47 → `advanceBackfillWindow` 要求全部到位 → 全體 idle（log
+   "backfill idle"）→ backfill 的 3.0 req/s 份額整段閒置。
+2. **incremental 吃滿自己 2.0 req/s**（394 活躍板需求 > 份額；單迴圈序列），
+   而靜態 40/60 分帳（index.ts）讓 backfill 閒置份額借不過去。
+3. CLAUDE.md 記載的「事件循環 1.7/s 天花板」此刻非瓶頸（CPU 0%）——先修排程。
+
+## 設計
+
+### 卡 5.1 — claim 生命週期修正
+- `backfillBoard`：批次暫停路徑（`!reachedBoundary && endPage > 1`）加
+  `releaseBackfillClaim`。
+- **錯誤路徑不釋放**（desk-check 修正）：持續失敗的板若釋放 claim 會變成
+  claim→fail→release→claim 迴圈；6h 排斥正是壞板的 cool-off 機制，維持原行為。
+  SIGTERM 中斷由啟動時 `releaseOrphanedClaims` 收尾。
+- 語意不變：claim 的用途是「批次進行中防止並發重掃」；批次正常結束（完成/暫停）
+  即釋放，resume 靠 `last_backfill_page`。
+- 部署時 `releaseOrphanedClaims`（啟動）會清掉 production 現有 2 個殭屍 claim。
+
+### 卡 5.2 — 雙桶 limiter（backfill 閒置時讓渡份額）
+- `rate_limiter.ts` 加 `CombinedLimiter`（序列 await 多個桶）。
+- `FetcherOptions` 加 `limiter?: RateLimiter` 覆寫（預設行為不變）。
+- index.ts：`global = RateLimiter(RATE_LIMIT)`、`backfillCap = RateLimiter(0.6R)`；
+  backfill fetcher = Combined(backfillCap, global)，incremental fetcher = global。
+  數學：backfill ≤ min(0.6R, R)；incremental 保證 ≥ 0.4R、backfill 閒置時可用滿 R；
+  全域總量恆 ≤ RATE_LIMIT（禮貌上限不變）。discovery 沿用 backfill fetcher（仍被 sub-cap）。
+- 不做：動態調 share 的 env（無需求）；Fix B「水位前進忽略 claimed 板」——5.1 已除根因，
+  B 會改變 pacing 語意（板正當掃描中就推進水位），不需要。
+
+### 卡 5.3 — E2E + 里程碑
+- E2E 兩階段：temp DB 跑 90s（hotboard 探索+首輪 backfill）→ SIGTERM → 以 SQL 種出
+  「stall 現場」（1 板 claimed 1h 前 + floor 高於邊界、其餘板 floor=邊界、window_bottom 存在）
+  → 重啟 120s → 斷言：重複 `backfill batch:` 該板、無 `backfill idle`、（若掃到）`window
+  boundary`/`window advanced`、且該板 claim 在批次間為 NULL。
+- docs（CLAUDE.md：Crawler 策略 + 已知坑）、PROGRESS、refuter、部署正式實例。
+
+## 驗收（每卡 machine-checkable）
+- 5.1/5.2：`bun test` 全綠（各 +≥1 測試）+ `bunx tsc --noEmit` exit 0。
+- 5.3：E2E 輸出留檔；refuter PASS；正式實例 journal 顯示 backfill 恢復工作。
+
+---
+
 # SPEC — 改善整個 codebase（ptt-insight）
 
 日期：2026-08-16 · Baseline：`bun test` 83 pass / `bunx tsc --noEmit` 乾淨 / git clean。

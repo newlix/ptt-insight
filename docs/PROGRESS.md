@@ -7,6 +7,41 @@ Baseline：83 tests / tsc clean / git clean。全面 read-only 審查（37 檔�
 
 ---
 
+# 任務 5 — 排程三修：backfill 卡死 + 份額讓渡（2026-08-16）
+
+## 緣起
+
+使用者「管線卡在哪」→ 實測診斷（CPU 0 ticks/5s、RTT 16ms、吞吐 1.6/5 req/s）：
+backfill 整個子系統因 2 個殭屍 claim（批次掃完未釋放、6h 排斥鎖住、擋住水位前進）
+而 idle；incremental 吃滿靜態 40% 份額而 backfill 閒置份額借不過去。
+
+## 落地
+
+- **claim 生命週期**：批次暫停路徑即 `releaseBackfillClaim`（resume 靠 last_backfill_page）；
+  錯誤路徑刻意不釋放（6h 排斥=壞板 cool-off，避免 claim→fail→release 焦土迴圈——
+  desk-check 攔下的原設計錯誤）。
+- **雙桶 limiter**：全域桶(RATE_LIMIT) + backfill 子桶(60%)，backfill 每請求消耗兩桶、
+  incremental 只耗全域桶 → incremental 保證 ~40%、backfill 閒置時可借滿全域；
+  全域總量恆 ≤ RATE_LIMIT。`FetcherOptions.limiter` 可覆寫，`CombinedLimiter` 序列取 token。
+- Fix B（水位前進忽略 claimed 板）評估後不做：5.1 已除根因，B 會改 pacing 語意。
+
+## 驗證
+
+- `bun test` 92 pass / 0 fail（+3：rate_limiter burst 數學、claim pause 釋放+可立即 re-claim）、
+  tsc exit 0。
+- E2E stall 重現（/tmp/sched-e2e-p{1,2}.log）：seed 2 板 claimed 1h 前 + floor 高於邊界
+  （完全仿 production 卡死現場）→ 重啟 150s → `released 2 orphaned`、`backfill idle` 0 次、
+  6 次 `backfill start`、被鎖的 BaseballXXXX 實際被掃（6 頁/107 篇，crawl_run 為證）。
+
+## 教訓
+
+- 殭屍鎖的根因常是「成功路徑忘了釋放」而非「搶鎖邏輯錯」；錯誤路徑的鎖保留反而可能是
+  對的（cool-off），兩者要分開推。
+- E2E 種現場要忠於 production 數據形狀：window_bottom 在 fresh DB 是 migration 種的
+  （非 NULL），假時間戳的 fixture 板要先把邊界調低才模擬得出 mid-window 狀態。
+
+---
+
 # 任務 4 — 提高爬文頻率（2026-08-16）
 
 ## 範圍與落地
