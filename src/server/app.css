@@ -689,3 +689,12 @@ a { text-decoration: none; }
 .ea-board { color: #9cf; text-decoration: none; }
 .ea-date { color: var(--z500); }
 .ea-tldr { color: #bba; font-size: 14px; padding-top: 2px; }
+
+/* --- /deleted archive --- */
+.del-day { color: var(--ptt-f1); font-size: 15px; padding: 14px 0 4px; border-bottom: 1px solid #333; }
+.del-article { padding: 9px 2px; border-bottom: 1px solid #222; }
+.del-title { color: #eee; font-size: 16px; }
+.del-meta { display: flex; gap: 12px; font-size: 13px; color: var(--z500); padding: 3px 0; flex-wrap: wrap; }
+.del-board { color: #9cf; }
+.del-tldr { color: #0a0; font-size: 14px; padding-top: 2px; }
+.del-excerpt { color: var(--z400); font-size: 14px; padding-top: 4px; line-height: 1.5; }

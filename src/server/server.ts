@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DB } from "../db/sqlite.ts";
 import * as repo from "../repo/articles.ts";
+import { listDeletedArticles } from "../repo/deleted.ts";
 import { insightStats } from "../repo/insights.ts";
 import type { HotBoardsCache } from "../crawler/ptt/hotboards.ts";
 import { parseIndexSlug, totalPages } from "../views/helpers.ts";
@@ -10,6 +11,7 @@ import { pttBoardPage } from "../views/board.ts";
 import { pttArticlePage } from "../views/article.ts";
 import { searchPage } from "../views/search.ts";
 import { entityPage } from "../views/entity.ts";
+import { deletedPage } from "../views/deleted.ts";
 import { searchEntities, entityTimeline, entityArticles } from "../repo/entities.ts";
 import { boardsListPage } from "../views/pages.ts";
 
@@ -79,6 +81,9 @@ export function createServer(opts: ServerOptions) {
       if (path === "/search") {
         const q = url.searchParams.get("q")?.trim() ?? "";
         return html(searchPage(q, searchEntities(opts.db, q, 30)));
+      }
+      if (path === "/deleted") {
+        return html(deletedPage(listDeletedArticles(opts.db, 200)));
       }
       const ent = path.match(/^\/e\/([^/]+)$/);
       if (ent) {

@@ -157,6 +157,29 @@ test("GET /search and /e/:name serve entity pages", async () => {
   db.prepare(`DELETE FROM article_insights WHERE article_id = ?`).run(aid);
 });
 
+test("GET /deleted renders soft-deleted archive", async () => {
+  const empty = await GET("/deleted");
+  expect(empty.status).toBe(200);
+  expect(await empty.text()).toContain("刪文存檔");
+
+  // seed: soft-delete one seeded article with an insight
+  const aid = (db.prepare(`SELECT id FROM articles WHERE url_id = 'M.1005.A.A5'`).get() as { id: number }).id;
+  db.prepare(
+    `INSERT INTO article_insights (article_id, tldr, model, schema_ver) VALUES (?, '刪文摘要', 'm', 2)`,
+  ).run(aid);
+  db.prepare(`UPDATE articles SET deleted_at = ? WHERE id = ?`).run(Math.floor(Date.now() / 1000) - 3600, aid);
+
+  const page = await GET("/deleted");
+  const body = await page.text();
+  expect(body).toContain("deleted-page");
+  expect(body).toContain("article 5");
+  expect(body).toContain("刪文摘要");
+  expect(body).toContain("del-excerpt");
+
+  db.prepare(`UPDATE articles SET deleted_at = NULL WHERE id = ?`).run(aid);
+  db.prepare(`DELETE FROM article_insights WHERE article_id = ?`).run(aid);
+});
+
 test("GET /b/{board} renders board, unknown board → not-collected page", async () => {
   const ok = await GET("/b/TestBoard");
   expect(ok.status).toBe(200);
