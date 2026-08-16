@@ -268,6 +268,29 @@ test("cache policy headers per path", async () => {
   expect(css.headers.get("Cache-Control")).toBe("public, max-age=3600");
 });
 
+test("GET /status renders operational aggregates", async () => {
+  const page = await GET("/status");
+  expect(page.status).toBe(200);
+  const body = await page.text();
+  expect(body).toContain("status-page");
+  expect(body).toContain("v2 分析總數");
+  expect(body).toContain("週額度使用率");
+});
+
+test("healthz total applies the age gate (minAgeSecs)", async () => {
+  // seeded articles are from epoch 1970 → age-eligible either way
+  const appAged = createServer({
+    db, pageSize: 30,
+    hot: new HotBoardsCache(`http://localhost:${fixtureServer.port}`, 60_000),
+    minNet: 5,
+    minAgeSecs: 7 * 86400,
+  });
+  const aged = await appAged.handler(new Request("http://localhost/healthz"));
+  const agedBody = (await aged.json()) as { total: number };
+  expect(agedBody.total).toBe(35); // 35 seeded articles (net>=5), all old → eligible
+  appAged.stop();
+});
+
 test("GET /b/{board} renders board, unknown board → not-collected page", async () => {
   const ok = await GET("/b/TestBoard");
   expect(ok.status).toBe(200);

@@ -719,6 +719,14 @@ a { text-decoration: none; }
 .rise-prob .tl-bar { max-width: 220px; flex-grow: 1; }
 .rise-pct { font-family: var(--ptt-mono); font-size: 14px; flex-shrink: 0; }
 .rise-calib { color: var(--z500); font-size: 12px; padding: 14px 2px; line-height: 1.6; }
+
+/* --- /status --- */
+.status-grid { padding: 8px 0; }
+.status-row { display: flex; align-items: baseline; gap: 12px; padding: 5px 2px; border-bottom: 1px dotted #222; }
+.status-label { color: var(--z400); font-size: 14px; width: 200px; flex-shrink: 0; }
+.status-value { color: #dedede; font-family: var(--ptt-mono); font-size: 16px; }
+.status-note { color: var(--z500); font-size: 12px; margin-left: auto; }
+.status-credit { padding-top: 10px; }
 .author-link { color: inherit; text-decoration: none; }
 .author-link:hover { text-decoration: underline; }
 

@@ -224,6 +224,7 @@ async function main(): Promise<void> {
       pageSize,
       hot: new HotBoardsCache(hotboardsURL, hotboardsTTL * 1000),
       minNet: workerMinNet,
+      minAgeSecs: workerMinAgeDays * 86400,
       deletedToken: envStr("DELETED_ARCHIVE_TOKEN", ""),
     });
     const port = addr.startsWith(":") ? Number(addr.slice(1)) : Number(addr);

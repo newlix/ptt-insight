@@ -201,16 +201,17 @@ export function markInsightError(db: DB, articleId: number, errMsg: string): voi
   ).run(articleId, errMsg, nowSecs());
 }
 
-export function insightStats(db: DB, minNet = 20): { analyzed: number; total: number } {
+export function insightStats(db: DB, minNet = 20, minAgeSecs = 0): { analyzed: number; total: number } {
   const row = db
     .prepare(
       `SELECT
          (SELECT count(*) FROM article_insights WHERE error IS NULL) AS analyzed,
          (SELECT count(*) FROM articles
           WHERE deleted_at IS NULL AND content IS NOT NULL AND length(content) > 20
-            AND COALESCE(net_count, 0) >= ?) AS total`,
+            AND COALESCE(net_count, 0) >= ?
+            AND (posted_at IS NULL OR posted_at < unixepoch() - ?)) AS total`,
     )
-    .get(minNet) as { analyzed: number; total: number };
+    .get(minNet, minAgeSecs) as { analyzed: number; total: number };
   return { analyzed: row.analyzed, total: row.total };
 }
 

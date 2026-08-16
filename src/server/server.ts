@@ -19,6 +19,8 @@ import { trendingEntities, risingArticles, velocityCalibration } from "../repo/t
 import { listArticlesByAuthor, authorStats } from "../repo/authors.ts";
 import { listPushesByUser, pushStats } from "../repo/authors.ts";
 import { userPage } from "../views/user.ts";
+import { statusPage } from "../views/status.ts";
+import { gatherStatus } from "../repo/status.ts";
 import { searchEntities, entityTimeline, entityArticles } from "../repo/entities.ts";
 import { boardsListPage } from "../views/pages.ts";
 
@@ -29,6 +31,7 @@ export interface ServerOptions {
   pageSize: number;
   hot: HotBoardsCache;
   minNet?: number; // WORKER_MIN_NET — keeps /healthz "total" consistent with the worker's claim threshold
+  minAgeSecs?: number; // WORKER_MIN_AGE_DAYS*86400 — same: healthz "total" counts only the age-eligible pool
   deletedToken?: string; // DELETED_ARCHIVE_TOKEN — when set, /deleted requires ?token=; unset → 404 (not a public feature: respect PTT deletion authority)
 }
 
@@ -103,6 +106,9 @@ export function createServer(opts: ServerOptions) {
       if (path === "/trends") {
         return html(trendsPage(trendingEntities(opts.db, 30)));
       }
+      if (path === "/status") {
+        return html(statusPage(gatherStatus(opts.db)));
+      }
       if (path === "/rising") {
         return html(risingPage(risingArticles(opts.db, 12, 30), velocityCalibration(opts.db, 10)));
       }
@@ -175,7 +181,7 @@ export function createServer(opts: ServerOptions) {
 
       // -- /healthz --
       if (path === "/healthz") {
-        const stats = insightStats(opts.db, opts.minNet ?? 20);
+        const stats = insightStats(opts.db, opts.minNet ?? 20, opts.minAgeSecs ?? 0);
         return new Response(`{"status":"ok","analyzed":${stats.analyzed},"total":${stats.total}}`, {
           headers: { "Content-Type": "application/json" },
         });
