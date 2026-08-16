@@ -255,6 +255,19 @@ test("article page author links to /u/:author", async () => {
   expect(body).toContain(`href="/u/author1"`);
 });
 
+test("cache policy headers per path", async () => {
+  const board = await GET("/bbs/TestBoard/index.html");
+  expect(board.headers.get("Cache-Control")).toContain("s-maxage=60");
+  const article = await GET("/bbs/TestBoard/M.1001.A.A1.html");
+  expect(article.headers.get("Cache-Control")).toContain("s-maxage=300");
+  const health = await GET("/healthz");
+  expect(health.headers.get("Cache-Control")).toBe("no-store");
+  const trends = await GET("/trends");
+  expect(trends.headers.get("Cache-Control")).toContain("s-maxage=600");
+  const css = await GET("/static/app.css");
+  expect(css.headers.get("Cache-Control")).toBe("public, max-age=3600");
+});
+
 test("GET /b/{board} renders board, unknown board → not-collected page", async () => {
   const ok = await GET("/b/TestBoard");
   expect(ok.status).toBe(200);

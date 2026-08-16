@@ -188,12 +188,45 @@ export function createServer(opts: ServerOptions) {
     }
   }
 
-  return { handler, stop: () => clearInterval(navTimer) };
+  // Wrap every response with the per-path cache policy (single choke point).
+  const cachedHandler = (req: Request): Response | Promise<Response> => {
+    const path = new URL(req.url).pathname;
+    const res = handler(req);
+    const apply = (r: Response): Response => {
+      try {
+        r.headers.set("Cache-Control", cacheFor(path));
+      } catch {
+        /* immutable response — keep its own headers */
+      }
+      return r;
+    };
+    return res instanceof Promise ? res.then(apply) : apply(res);
+  };
+
+  return { handler: cachedHandler, stop: () => clearInterval(navTimer) };
 }
 
 function parsePage(url: URL): number {
   const p = Number(url.searchParams.get("page"));
   return Number.isInteger(p) && p >= 1 ? p : 1;
+}
+
+// Per-path edge-cache policy (Cloudflare respects s-maxage; stale-while-
+// revalidate keeps a page served while refreshing). Private/internal pages
+// never cache. See docs/SPEC.md 任務 9.17.
+function cacheFor(path: string): string {
+  if (path === "/healthz" || path.startsWith("/deleted")) return "no-store";
+  if (path.startsWith("/static/")) return "public, max-age=3600";
+  if (path === "/" || path === "/bbs/hotboards.html") return "public, s-maxage=300, stale-while-revalidate=600";
+  if (path === "/digest") return "public, s-maxage=3600";
+  if (path === "/trends") return "public, s-maxage=600";
+  if (path === "/rising") return "public, s-maxage=60";
+  if (path.startsWith("/search") || path.startsWith("/e/")) return "public, s-maxage=600";
+  if (path.startsWith("/u/")) return "public, s-maxage=300";
+  const m = path.match(/^\/bbs\/[^/]+\/index\.html$/);
+  if (m) return "public, s-maxage=60, stale-while-revalidate=120";
+  if (/^\/bbs\/[^/]+\/[^/]+\.html$/.test(path)) return "public, s-maxage=300, stale-while-revalidate=600";
+  return "public, max-age=30";
 }
 
 function renderBoard(opts: ServerOptions, boardName: string, page: number): Response {

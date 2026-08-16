@@ -1,0 +1,7 @@
+[Unit]
+Description=ptt-insight nightly DB backup
+
+[Service]
+Type=oneshot
+User=newlix
+ExecStart=/bin/bash /home/newlix/ptt-insight/scripts/backup_db.sh /home/newlix/ptt-insight/ptt.db
