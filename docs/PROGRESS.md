@@ -28,6 +28,12 @@ Baseline：83 tests / tsc clean / git clean。全面 read-only 審查（37 檔�
   drainBody 連線池效應 headless 難直接斷言，留間接覆蓋。
 - 最終：**bun test 86 pass / 0 fail**、`bunx tsc --noEmit` exit 0。
 
+## 收尾（2026-08-16 resumed session）
+
+- 提交前本 session 重驗：86 pass / 0 fail、tsc exit 0（grounding）。
+- commit fb574e7（5 卡改善：18 files, +138/−205）+ 0b79581（docs/SPEC、PROGRESS、designcheck.ts）。
+- push：`ee93aa7..0b79581 main -> main`。`.fable/` 加入 .gitignore 留 local。
+
 ## 教訓（本 session）
 
 - edit 工具 before/after 方向搞反會「復活」想刪的函式（卡 3 lastInsightTime 短暫重複兩份）— 
