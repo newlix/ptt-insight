@@ -24,7 +24,11 @@ try {
 const cfg = fileCfg;
 if (process.env.LLM_API_KEY) cfg.LLM_API_KEY = process.env.LLM_API_KEY;
 if (process.env.LLM_BASE_URL) cfg.LLM_BASE_URL = process.env.LLM_BASE_URL;
-if (process.env.LLM_MODEL) cfg.LLM_MODEL = process.env.LLM_MODEL;const client = new LLMClient(cfg.LLM_BASE_URL!, cfg.LLM_API_KEY!, cfg.LLM_MODEL!);
+if (process.env.LLM_MODEL) cfg.LLM_MODEL = process.env.LLM_MODEL;
+if (!cfg.LLM_API_KEY || !cfg.LLM_BASE_URL || !cfg.LLM_MODEL) {
+  console.error("missing credentials: pass LLM_API_KEY / LLM_BASE_URL / LLM_MODEL env (see /etc/ptt-insight.env)");
+  process.exit(1);
+}const client = new LLMClient(cfg.LLM_BASE_URL!, cfg.LLM_API_KEY!, cfg.LLM_MODEL!);
 const articles = claimPendingArticles(db, N, 20);
 console.log(`claimed ${articles.length} articles (db=${PROD_DB} model=${cfg.LLM_MODEL})`);
 
