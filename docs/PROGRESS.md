@@ -25,6 +25,10 @@ restart → 全板立即到期）後 local 11:00 一小時 35,262 篇假刪**，
 - v3（refuter FAIL rework）：Stage5 ground truth — 刪除前逐一 fetch 文章 URL，
   404 才刪、200 保留（殺 stale-verify 漏洞）；insertArticle ON CONFLICT 清
   deleted_at（成功抓取 = 存在；深頁自癒路徑）；鑑別測試 +3。
+- refuter round 2：CLAIM1「no index-snapshot path can forge a deletion」/
+  CLAIM2 復活可達性（backfillBoard→processArticle→insertArticle）皆驗證過；
+  唯一殘留 = upsert 測試 vacuous（listing 復活先跑）→ 改 processArticle 直驅
+  + mutation 證明（移除 clause 測試轉紅）。102 pass / 0 fail。
 - `resurrectArticle`：文章重現 index → 清 deleted_at。
 - 測試 97→102，既有 4 測語意保留。
 - refuter round 1 FAIL 的 GAP2（復原述詞過窄）：已改為 `deleted_at >=
