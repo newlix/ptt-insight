@@ -116,6 +116,7 @@ bunx tsc --noEmit # typecheck
 
 ## 已知坑與教訓
 
+- **vanish deletion 不可信任單一 index 快照**（2026-08-16 事件）：檢查頻率 5×（INCREMENTAL_MIN_SECS=120）後，index 快照異常（stale/partial）+ 無護欄 + 無復活 → 一小時 35K 篇假軟刪除。修法：候選 >0 先重抓最新頁複核、> `VANISH_GUARD_MAX`(100) 拒絕、滑落驗證後才標記；文章重現 index 即 `resurrectArticle`。教訓：對外部快照的 destructive 動作要有量護欄 + 可逆路徑
 - **`trg_boards_set_updated_at` trigger 會讓 `run().changes` 虛報兩倍**（trigger 內 UPDATE 也計入）— 需要真實計數就 SELECT 先數
 - **單事件循環是吞吐瓶頸**：cheerio parse + 同步 SQLite 寫在事件循環上序列化；`CRAWL_CONCURRENCY=3` 只移除網路閒置（1.48→1.73/s，預算 5/s）。再往上要 batch writes 或拆 process（未做）。**但瓶頸是分檔的**（2026-08-16 實測）：incremental 為主的時段 CPU 幾乎 0%、真正卡的是排程（殭屍 claim 卡水位前進、靜態速率分帳借不過去）——已修（claim 暫停即釋放 + 雙桶讓渡）；純 backfill 突發時事件循環上限才會觸頂
 - **HTML 模板一律 `esc()`**（templ 自動轉義的手動等價物）；attribute 位置也要

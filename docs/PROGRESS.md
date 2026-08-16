@@ -1,5 +1,34 @@
 # PROGRESS — ptt-insight codebase improvement (2026-08-16)
 
+---
+
+# 任務 6 — 假刪除風暴修復（2026-08-16）
+
+## 發現過程
+
+resume 巡檢發現 healthz total 異常下降 → backup 對照取證。關鍵校正：
+journal 時間戳是 local（+08）、DB deleted_at 以 UTC 解讀 — 首輪「03:00 風暴、服務停機
+期間外部刪除」的推論是時區錯覺；真實時間線：**任務 4 部署（10:47，檢查頻率 5×）後
+11:00 一小時內 35,262 篇假刪除**，且持續進行中（修復部署前 ~100/min）。機制：
+index 快照異常（stale/partial）→ 候選數千 → 驗證頁同時異常 → 全數誤標；無護欄、
+無復活。08-15 已有 15,337 篇（低頻時代同機制）。
+
+## 落地
+
+- `detectVanishedArticles` 三層防護：Stage1 重抓最新頁複核（暫態異常自癒）、
+  Stage2 `VANISH_GUARD_MAX=100` 量護欄（大聲拒絕）、Stage3 滑落驗證（原語意）。
+- `resurrectArticle`：文章重現 index → 清 deleted_at（存在性直接證據）。
+- 測試 +5（風暴護欄/暫態/驗證失敗/Stage1 失敗/復活），97 pass。
+- 緊急部署（資料持續受損，先止血後 refuter — 明示偏離常規順序）。
+
+## 待辦
+
+- 復原 SQL（使用者批准）：resurrect 08-15 11:00 起全部假刪（修復版偵測會對真刪文
+  重新標記，自癒）。
+- drip 機制確認：≤100/檢查的慢滴假刪（若有）依賴 Stage3 驗證攔截 — 部署後觀察。
+
+# （原敘事）
+
 ## 敘事
 
 Baseline：83 tests / tsc clean / git clean。全面 read-only 審查（37 檔）後立 5 卡（docs/SPEC.md），
@@ -39,6 +68,9 @@ backfill 整個子系統因 2 個殭屍 claim（批次掃完未釋放、6h 排�
   對的（cool-off），兩者要分開推。
 - E2E 種現場要忠於 production 數據形狀：window_bottom 在 fresh DB 是 migration 種的
   （非 NULL），假時間戳的 fixture 板要先把邊界調低才模擬得出 mid-window 狀態。
+- close-guard 把 `(acceptance: …)` 當 shell 指令機械重跑：acceptance 欄只能放可重跑指令，
+  中文敘述/一次性輸出放 evidence 段。耐久指令（git sha / 測試套件 / repo 檔案）優先於
+  /tmp 證據（重開機即失效會卡死未來收尾）。
 
 ---
 

@@ -1,3 +1,83 @@
+# 任務 6 — 假刪除風暴修復（vanish detection 硬化 + 復活 + 資料復原）（2026-08-16）
+
+## 緣起（[measured] 本 session 取證）
+
+resume 後發現 healthz `total` 異常 → sqlite 對 backup 取證：
+- **47,004 篇文章於 03:00–04:00 被軟刪除**（histogram by deleted_at）；刪除潮
+  2026-08-15 20:06 → 08-16 06:11，受害者集中 **C_Chat 29,477 / Marginalman 5,265**。
+- journal 02:55：數十個 dorm 板（NCCU06_CHI、alumni 板…）同一分鐘全部
+  "new articles found" → **PTT 維護時窗（~03:00）提供 stale/異常 index 快照**，
+  [inferred] 這是外部觸發源。
+- 現行 `detectVanishedArticles`（src/crawler/crawl/incremental.ts:116）：
+  單次 page-1 快照 → candidates = url_timestamp > oldest 且不在 present；
+  驗證 = 再抓第二新頁（pager 上頁）排除「僅滑落」。**弱點**：
+  1. stale 快照下 oldest 倒退數天 → candidates 數千（C_Chat 29.5K）；
+  2. 驗證頁同時 stale → 全數「確認刪除」；
+  3. 無 mass-deletion 護欄；
+  4. **無復活路徑**：upsert 不清 deleted_at、getArticleByBoardUrlID 不濾 deleted →
+     文章重新出現在 index 上也不會復原（錯殺 = 永久）。
+- baseline 每小時真實刪文僅 ~1–13 篇（08-15 各小時 histogram）。
+- 備援現況：backups/ 有 00:35/01:12/04:00 三份（04:00 份不含 WAL，不可靠）；
+  軟刪除其實 **資料本體仍在 live DB**（content/pushes/insights 完整）→
+  復原 = 清 deleted_at，不需回滾 backup。
+
+## 設計（防護層次：快照複核 → 量護欄 → 滑落驗證 → 復活）
+
+### 卡 6.1 — vanish detection 硬化 + 復活
+`detectVanishedArticles` 重寫（拋棄 maxPage 參數語意，改用 fresh parse 的 pager）：
+1. **Stage 1 快照複核**：candidates > 0 時**重抓最新頁**重算 candidates；
+   重算後為空 → 記 log 返回（暫態異常自癒）。抓取失敗 → 返回（寧可不刪）。
+2. **Stage 2 量護欄**：candidates > `VANISH_GUARD_MAX`（=100，註明理由：
+   baseline 1–13/h、真實版規清除極少 >100/檢查窗）→ `console.error` 大聲留痕 + 返回。
+3. **Stage 3 滑落驗證**（保留原語意）：抓第二新頁；在場 → 未刪；
+   比 prevOldest 舊 → 灰區不動；否則 markArticleDeleted。
+- **復活**：`processBoardIncremental` 既有文章分支 — `existing.deletedAt` 且
+  entry 在最新頁 → `resurrectArticle`（清 deleted_at）+ log。文章出現在 index
+  = 存在於 PTT 的直接證據，勝過舊刪除標記。`updateArticlePushes` 的
+  NotFoundError→markArticleDeleted（直接 404）維持不變。
+- 測試（tests/crawler/crawl/deletion.test.ts 擴充）：stale 風暴（150 候選，
+  護欄攔下）、暫態 stale（第一次 stale 第二次 fresh → 不刪）、真刪除仍偵測、
+  滑落救援（既有）、復活、驗證頁抓取失敗不刪。既有 4 測試必須全過
+  （static routes = 一致快照，新邏輯下語意不變）。
+
+### 卡 6.2 — E2E 重現 + docs
+- 以 testutil 真 Bun.serve 模擬「03:00 現場」：seed 板 + 已存文章、首抓 stale
+  快照 → 斷言 0 刪除；fresh 下真刪除正常。併入 deletion.test.ts
+  （同一 harness，不另開 script）。
+- CLAUDE.md 已知坑 + 本事件一段；PROGRESS 記錄。
+
+### 卡 6.3 — milestone：refuter + commit + push + 部署（程式碼）
+- refuter 診證（餵本節錄 + acceptance）。
+- commit（含前置 housekeeping：移除意外產生的空檔 `0`、補送 PROGRESS.md
+  既有 3 行 lesson）+ push。
+- 部署正式實例（pull + restart + journal 驗證啟動）。
+
+## 資料復原（使用者批准後執行，不屬程式碼卡）
+
+候選 SQL（先 count 核對再 UPDATE；單一 UPDATE 原子，可在服務運行中執行）：
+```sql
+-- 預期 ~= 34,742
+SELECT count(*) FROM articles WHERE deleted_at BETWEEN 1786791600 AND 1786834800
+  AND board_id IN (SELECT id FROM boards WHERE name IN ('C_Chat','Marginalman'));
+UPDATE articles SET deleted_at = NULL WHERE deleted_at BETWEEN 1786791600 AND 1786834800
+  AND board_id IN (SELECT id FROM boards WHERE name IN ('C_Chat','Marginalman'));
+-- 1786791600 = 2026-08-15 19:00 +08（date -d 核對過）、1786834800 = 08-16 07:00 +08
+```
+復原後：修復版偵測會對仍在新頁窗內的真刪文重新標記；深頁文章本為真實存在文，
+殘留可見屬可接受保真誤差。
+
+## 驗收（每卡 machine-checkable）
+- 6.1/6.2：`bun test` 全綠（+≥5 測試）+ `bunx tsc --noEmit` exit 0 +
+  `rg -q VANISH_GUARD_MAX src/crawler/crawl/incremental.ts`。
+- 6.3：git sha 入 LEDGER + `systemctl is-active --quiet ptt-insight`。
+
+## 不修（評估後排除）
+- 備援 WAL 完整性（backup 腳本另行處理，非本卡範圍）。
+- backoff 在異常快照下的 reset 行為（次要放大器；Stage 1 複核已切斷刪除路徑）。
+- 歷史真刪文與風暴刪文的逐篇區分（不可能，接受深頁殘留）。
+
+---
+
 # 任務 4 — 提高爬文頻率（2026-08-16）
 
 ## 緣起
@@ -106,8 +186,8 @@ systemctl restart → journalctl 確認啟動行帶新 interval）。
 
 ## 審查證據（load-bearing 發現）
 
-1. **[measured] `/healthz` 與 worker 門檻不一致**：`src/repo/insights.ts` `insightStats()`
-   硬編碼 `net_count >= 20`；worker 實際用 `WORKER_MIN_NET`（env 可調）。操作者調高門檻後
+1. **[measured] `/healthz` 與 worker 閾值不一致**：`src/repo/insights.ts` `insightStats()`
+   硬編碼 `net_count >= 20`；worker 實際用 `WORKER_MIN_NET`（env 可調）。操作者調高閾值後
    healthz 的 `total`（分母）會虛報。→ 卡 1
 2. **[measured] incremental 每次檢查對每篇既有文章寫 no-op UPDATE**：
    `src/crawler/crawl/incremental.ts` `processBoardIncremental` 對 nrec 未變的文章仍呼叫

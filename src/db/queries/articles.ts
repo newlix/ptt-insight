@@ -27,6 +27,8 @@ export interface ArticleQueries {
   getArticleByBoardUrlID(boardId: number, urlId: string): Article | null;
   updateArticleFromIndex(boardId: number, urlId: string, nrecRaw: string | null, mark: string | null): void;
   markArticleDeleted(boardId: number, urlId: string): void;
+  // Undo a soft deletion — used when an article reappears on a live index page.
+  resurrectArticle(boardId: number, urlId: string): void;
   // Stored articles newer than the fetched index page's oldest entry but absent
   // from it — deletion candidates (they cannot have scrolled off: scrolling makes
   // an article OLDER than the page's oldest entry).
@@ -100,6 +102,15 @@ export function createArticleQueries(db: DB): ArticleQueries {
       db.prepare(
         `UPDATE articles SET deleted_at = ? WHERE board_id = ? AND url_id = ? AND deleted_at IS NULL`,
       ).run(nowSecs(), boardId, urlId);
+    },
+
+    // Undo a soft deletion — used when an article reappears on a live index
+    // page (direct evidence it exists on PTT; earlier vanish marks may have
+    // been false positives from anomalous snapshots).
+    resurrectArticle(boardId: number, urlId: string): void {
+      db.prepare(
+        `UPDATE articles SET deleted_at = NULL WHERE board_id = ? AND url_id = ? AND deleted_at IS NOT NULL`,
+      ).run(boardId, urlId);
     },
 
     findVanishedArticles(
