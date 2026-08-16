@@ -189,8 +189,7 @@ test("GET /deleted is token-gated internal archive", async () => {
   appNoToken.stop();
 });
 
-test("GET /digest renders board digests", async () => {
-  const empty = await GET("/digest");
+test("GET /digest renders board digests", async () => {  const empty = await GET("/digest");
   expect(empty.status).toBe(200);
   expect(await empty.text()).toContain("日報生成中");
 
@@ -205,6 +204,18 @@ test("GET /digest renders board digests", async () => {
   expect(body).toContain("測試日報內容");
   db.prepare(`DELETE FROM board_digests`).run();
   db.prepare(`UPDATE boards SET is_hot = 0 WHERE id = 1`).run();
+});
+
+test("GET /trends and /rising render", async () => {
+  const t = await GET("/trends");
+  expect(t.status).toBe(200);
+  const tbody = await t.text();
+  expect(tbody).toContain("trends-page");
+
+  const r = await GET("/rising");
+  expect(r.status).toBe(200);
+  const rbody = await r.text();
+  expect(rbody).toContain("rising-page");
 });
 
 test("GET /b/{board} renders board, unknown board → not-collected page", async () => {

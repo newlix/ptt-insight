@@ -14,6 +14,8 @@ import { entityPage } from "../views/entity.ts";
 import { deletedPage } from "../views/deleted.ts";
 import { digestPage } from "../views/digest.ts";
 import { listDigests } from "../repo/digests.ts";
+import { trendsPage, risingPage } from "../views/trends.ts";
+import { trendingEntities, risingArticles, velocityCalibration } from "../repo/trends.ts";
 import { searchEntities, entityTimeline, entityArticles } from "../repo/entities.ts";
 import { boardsListPage } from "../views/pages.ts";
 
@@ -94,6 +96,12 @@ export function createServer(opts: ServerOptions) {
         return html(deletedPage(listDeletedArticles(opts.db, 200)));
       }      if (path === "/digest") {
         return html(digestPage(listDigests(opts.db)));
+      }
+      if (path === "/trends") {
+        return html(trendsPage(trendingEntities(opts.db, 30)));
+      }
+      if (path === "/rising") {
+        return html(risingPage(risingArticles(opts.db, 12, 30), velocityCalibration(opts.db, 10)));
       }
       const ent = path.match(/^\/e\/([^/]+)$/);
       if (ent) {

@@ -706,3 +706,16 @@ a { text-decoration: none; }
 .digest-board-name:hover { text-decoration: underline; }
 .digest-meta { color: var(--z500); font-size: 13px; margin-left: 10px; }
 .digest-text { color: #ccc; font-size: 15px; line-height: 1.6; padding-top: 6px; }
+
+/* --- /trends + /rising --- */
+.trend-row { display: flex; align-items: baseline; gap: 10px; padding: 6px 2px; border-bottom: 1px solid #222; }
+.trend-rank { color: var(--z500); font-family: var(--ptt-mono); font-size: 13px; width: 22px; flex-shrink: 0; }
+.trend-name { color: #dedede; font-size: 16px; text-decoration: none; }
+.trend-name:hover { color: #fff; text-decoration: underline; }
+.trend-row .tl-bar { flex-grow: 1; max-width: 320px; align-self: center; }
+.trend-counts { color: var(--z500); font-size: 13px; flex-shrink: 0; }
+.rise-row { padding: 8px 2px; border-bottom: 1px solid #222; }
+.rise-prob { display: flex; align-items: center; gap: 8px; padding-top: 4px; }
+.rise-prob .tl-bar { max-width: 220px; flex-grow: 1; }
+.rise-pct { font-family: var(--ptt-mono); font-size: 14px; flex-shrink: 0; }
+.rise-calib { color: var(--z500); font-size: 12px; padding: 14px 2px; line-height: 1.6; }
