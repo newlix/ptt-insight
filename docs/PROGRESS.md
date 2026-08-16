@@ -53,6 +53,19 @@ restart → 全板立即到期）後 local 11:00 一小時 35,262 篇假刪**，
 - sqlite3 .backup 對 1.3GB 高寫入 DB 會超時；局部快照受影響欄位（2.7MB）
   是更快且更針對的可逆保險。
 
+# 任務 7 — 刪除稽核（2026-08-16）
+
+## 做了什麼
+
+- migration 0003 `deletion_audits` + `runDeletionAudit`（24h..7d 窗、未稽核、
+  ≤50/輪；200→復活+warn、404→'gone'、暫態→下輪重試；≥10 復活=PTT 端異常
+  警報）+ `runDeletionAuditor` 每小時循環，掛在 crawler 啟動（共用 global
+  limiter）。測試 +5 → 107 pass；部署 e40dfb1。
+- **實機首輪證據**：`deletion audit: checked 7, gone 7, resurrected 0` —
+  7 篇事件前 baseline 刪除全部真 404，無誤殘。
+- 開發插曲：404 分支 `continue` 漏計 `checked` — 「稽核一次」測試抓到，
+  `bun -e` 最小重現定位，修一行。
+
 # （原敘事）
 
 ## 敘事
