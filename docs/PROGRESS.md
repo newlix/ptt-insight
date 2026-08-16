@@ -22,9 +22,14 @@ restart → 全板立即到期）後 local 11:00 一小時 35,262 篇假刪**，
 - v2（根因修）：Stage2 矛盾界（候選 ts > 快照 newest → 快照 stale 剔除）、
   Stage3 滑落邊界改用**第二新頁 newest**（置底文污染不了 max）、Stage4 護欄
   移到 narrowed 之後（置底文板不再永久噴 refusal）。
+- v3（refuter FAIL rework）：Stage5 ground truth — 刪除前逐一 fetch 文章 URL，
+  404 才刪、200 保留（殺 stale-verify 漏洞）；insertArticle ON CONFLICT 清
+  deleted_at（成功抓取 = 存在；深頁自癒路徑）；鑑別測試 +3。
 - `resurrectArticle`：文章重現 index → 清 deleted_at。
-- 測試 97→99（置底文板 VICTIM/RESCUED、narrowed 護欄；stale 測改走矛盾界），
-  既有 4 測語意保留。
+- 測試 97→102，既有 4 測語意保留。
+- refuter round 1 FAIL 的 GAP2（復原述詞過窄）：已改為 `deleted_at >=
+  1786762800`（08-15 11:00 local 起 = 假刪除時代全部，保留 7 筆真 baseline；
+  受災面 Marginalman 35.5K/C_Chat 34.2K/HatePolitics 1.7K/…），待使用者批准。
 
 ## 待辦
 

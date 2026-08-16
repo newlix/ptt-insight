@@ -252,6 +252,74 @@ test("Stage-1 re-fetch failure (network) leaves candidates untouched", async () 
   expect(art!.deletedAt).toBeNull();
 });
 
+test("Stage-2 contradiction bound: candidates newer than snapshot's newest are never deleted", async () => {
+  // 50 candidates are newer than the page-1 snapshot's newest entry AND sit
+  // above the verify page's boundary — without Stage 2 every one of them
+  // would be deleted (Stage 3 alone cannot rescue them); with it, none.
+  const e = env(
+    pathServer({
+      "/bbs/DelBoard/index.html": deletionIndexPage(3, 2, "M.3000000000.A.TOP", "M.1000000000.A.PIN"),
+      "/bbs/DelBoard/index2.html": deletionIndexPage(2, 1, "M.2900000000.A.BOUND", "M.1999999999.A.C"),
+      "/bbs/DelBoard/M.3000000000.A.TOP.html": articlePage("M.3000000000.A.TOP"),
+    }),
+  );
+
+  const board = e.store.upsertBoard({ name: "DelBoard" });
+  for (let i = 0; i < 50; i++) {
+    insertArticle(e, board.id, `M.${3000000001 + i}.A.N${i}`, 3000000001 + i);
+  }
+
+  await processBoardIncremental(e.fetcher, e.store, board);
+
+  const n = e.db.prepare("SELECT count(*) AS c FROM articles WHERE deleted_at IS NOT NULL").get() as {
+    c: number;
+  };
+  expect(n.c).toBe(0);
+});
+
+test("ground truth: vanished candidate whose URL is alive is NOT deleted", async () => {
+  // Candidate passes every index-based stage, but the article page fetches
+  // 200 — stale index/cache disagreement resolves in favor of the URL.
+  const e = env(
+    pathServer({
+      "/bbs/DelBoard/index.html": deletionIndexPage(3, 2, "M.2000000000.A.TOP", "M.1000000000.A.PIN"),
+      "/bbs/DelBoard/index2.html": deletionIndexPage(2, 1, "M.1900000000.A.BOUND"),
+      "/bbs/DelBoard/M.2000000000.A.TOP.html": articlePage("M.2000000000.A.TOP"),
+      "/bbs/DelBoard/M.1950000000.A.ALIVE.html": articlePage("M.1950000000.A.ALIVE"),
+    }),
+  );
+
+  const board = e.store.upsertBoard({ name: "DelBoard" });
+  insertArticle(e, board.id, "M.1950000000.A.ALIVE", 1950000000);
+
+  await processBoardIncremental(e.fetcher, e.store, board);
+
+  expect(e.store.getArticleByBoardUrlID(board.id, "M.1950000000.A.ALIVE")!.deletedAt).toBeNull();
+});
+
+test("upsert resurrection: a successful article-page crawl clears the deletion mark", async () => {
+  // Deep-page path: backfill/incremental re-crawls an article whose stored
+  // row is soft-deleted; the successful fetch must resurrect it.
+  const e = env(
+    pathServer({
+      "/bbs/DelBoard/index.html": deletionIndexPage(2, 1, "M.1500000000.A.BACK"),
+      "/bbs/DelBoard/M.1500000000.A.BACK.html": articlePage("M.1500000000.A.BACK"),
+    }),
+  );
+
+  const board = e.store.upsertBoard({ name: "DelBoard" });
+  insertArticle(e, board.id, "M.1500000000.A.BACK", 1500000000);
+  e.db.prepare("UPDATE articles SET deleted_at = 1000").run();
+
+  // Simulate the crawl path: the entry is listed and its row exists, so the
+  // incremental flow goes through updateArticlePushes (nrec changed), which
+  // re-fetches the article page and upserts.
+  e.db.prepare("UPDATE articles SET nrec_raw = '4'").run(); // force nrecChanged
+  await processBoardIncremental(e.fetcher, e.store, board);
+
+  expect(e.store.getArticleByBoardUrlID(board.id, "M.1500000000.A.BACK")!.deletedAt).toBeNull();
+});
+
 test("resurrection: article listed on the index page clears its deletion mark", async () => {
   const e = env(
     pathServer({

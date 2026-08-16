@@ -1,4 +1,4 @@
-import { Fetcher } from "../ptt/fetcher.ts";
+import { Fetcher, NotFoundError } from "../ptt/fetcher.ts";
 import { parseIndexPage } from "../ptt/index_parser.ts";
 import type { Board } from "../../db/types.ts";
 import type { Store } from "../../db/store.ts";
@@ -207,9 +207,23 @@ async function detectVanishedArticles(
     return;
   }
 
+  // Stage 5 — ground truth. All reasoning so far rests on index snapshots,
+  // which can be individually stale (cache incoherence between pages — the
+  // exact anomaly class of the incident). The article URL itself is the only
+  // unforgeable witness: 404 => genuinely deleted; anything else => keep.
   for (const c of candidates) {
-    store.markArticleDeleted(board.id, c.urlId);
-    console.log(`deleted: ${board.name}/${c.urlId}`);
+    try {
+      await fetcher.fetchArticlePage(board.name, c.urlId, signal);
+      console.warn(`vanished ${board.name}/${c.urlId}: URL alive despite index absence — kept (stale snapshot?)`);
+      continue;
+    } catch (e) {
+      if (e instanceof NotFoundError) {
+        store.markArticleDeleted(board.id, c.urlId);
+        console.log(`deleted: ${board.name}/${c.urlId}`);
+        continue;
+      }
+      if (!isAborted(e, signal)) console.error(`vanished verify article ${board.name}/${c.urlId}:`, e);
+    }
   }
 }
 

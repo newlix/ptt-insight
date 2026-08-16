@@ -51,6 +51,16 @@ resume 後發現 healthz `total` 異常 → sqlite 對 backup + journal 取證�
   （同一 harness，不另開 script）。
 - CLAUDE.md 已知坑 + 本事件一段；PROGRESS 記錄。
 
+### 卡 6.4 — refuter rework（GAP1/3/4）
+refuter FAIL 後的三項加固：
+1. **Stage 5 ground truth**：刪除前逐一 fetch 該文 URL — 404 才 markArticleDeleted；
+   200 → 保留 + warn（stale snapshot 分歧以 URL 為準）。殺死「stale verify 頁
+   在護欄下漏 ~60/檢查」的洞（GAP1）。
+2. **insertArticle ON CONFLICT 清 deleted_at**：成功抓取文章頁 = 存在的直接
+   證據；深頁文章從此有復活路徑（backfill window sweep 重掃即自癒）（GAP3）。
+3. 鑑別測試：Stage2 矛盾界（50 候選 > snapshot newest、無 Stage2 必刪）、
+   URL-alive 不刪、upsert 復活（GAP4 + 新路徑）。
+
 ### 卡 6.3 — milestone：refuter + commit + push + 部署（程式碼）
 - refuter 診證（餵本節錄 + acceptance）。
 - commit（含前置 housekeeping：移除意外產生的空檔 `0`、補送 PROGRESS.md
@@ -59,17 +69,19 @@ resume 後發現 healthz `total` 異常 → sqlite 對 backup + journal 取證�
 
 ## 資料復原（使用者批准後執行，不屬程式碼卡）
 
-候選 SQL（先 count 核對再 UPDATE；單一 UPDATE 原子，可在服務運行中執行）：
+[measured] 08-15 11:00 local（epoch 1786762800）之前全庫僅 **7** 筆刪除 —
+假刪除時代涵蓋全部 71,601+ 筆（08-16 15:10 實測；修復部署後新增 ≈ 0）。
+正確述詞 = 復原全部風暴期刪除（不限 C_Chat/Marginalman — movie/SportLottery/
+Baseball/HatePolitics 等同受災）：
 ```sql
--- 預期 ~= 34,742
-SELECT count(*) FROM articles WHERE deleted_at BETWEEN 1786791600 AND 1786834800
-  AND board_id IN (SELECT id FROM boards WHERE name IN ('C_Chat','Marginalman'));
-UPDATE articles SET deleted_at = NULL WHERE deleted_at BETWEEN 1786791600 AND 1786834800
-  AND board_id IN (SELECT id FROM boards WHERE name IN ('C_Chat','Marginalman'));
--- 1786791600 = 2026-08-15 19:00 +08（date -d 核對過）、1786834800 = 08-16 07:00 +08
+-- 核對（預期 ~71,601，隨時間僅微增）
+SELECT count(*) FROM articles WHERE deleted_at >= 1786762800;
+-- 執行（單一 UPDATE 原子，可運行中執行；保留 7 筆真 baseline）
+UPDATE articles SET deleted_at = NULL WHERE deleted_at >= 1786762800;
 ```
-復原後：修復版偵測會對仍在新頁窗內的真刪文重新標記；深頁文章本為真實存在文，
-殘留可見屬可接受保真誤差。
+復原後：修復版偵測會對仍在 pages 1–2 覆蓋內的真刪文重新標記（自癒）；
+深頁文章本為真實存在文，殘留可見屬可接受保真誤差。eligible 影響實測
++229（31,497→31,726 — 受災集中低淨推文閒聊文）。
 
 ## 驗收（每卡 machine-checkable）
 - 6.1/6.2：`bun test` 全綠（+≥5 測試）+ `bunx tsc --noEmit` exit 0 +

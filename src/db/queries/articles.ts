@@ -21,8 +21,9 @@ export interface InsertArticleParams {
 
 export interface ArticleQueries {
   // Insert new article or update on re-fetch (push update).
-  // ON CONFLICT updates content + push counts; preserves first_seen_at,
-  // posted_at, mark, and deleted_at.
+  // ON CONFLICT updates content + push counts and CLEARS deleted_at (a
+  // successful crawl is direct evidence the article exists on PTT);
+  // preserves first_seen_at, posted_at, and mark.
   insertArticle(p: InsertArticleParams): Article;
   getArticleByBoardUrlID(boardId: number, urlId: string): Article | null;
   updateArticleFromIndex(boardId: number, urlId: string, nrecRaw: string | null, mark: string | null): void;
@@ -57,7 +58,11 @@ export function createArticleQueries(db: DB): ArticleQueries {
              boo_count     = excluded.boo_count,
              neutral_count = excluded.neutral_count,
              net_count     = excluded.net_count,
-             last_fetched_at = excluded.last_fetched_at
+             last_fetched_at = excluded.last_fetched_at,
+             -- A successful crawl fetched the article page = it exists on PTT.
+             -- Undo any (possibly false-positive) vanish mark; deep-page
+             -- articles otherwise have no resurrection path at all.
+             deleted_at    = NULL
            RETURNING *`,
         )
         .get(
