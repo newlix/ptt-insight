@@ -146,7 +146,7 @@ export function parseAnalysis(raw: string): Analysis {
   return {
     tldr,
     community_take: an.community_take ?? "",
-    top_comments: an.top_comments ?? [],
+    top_comments: Array.isArray(an.top_comments) ? an.top_comments.filter((c) => typeof c === "string") : [],
     sentiment: normalizeSentiment(an.sentiment ?? ""),
     controversy: normalizeControversy(an.controversy ?? ""),
     tags: an.tags ?? [],
@@ -171,7 +171,7 @@ function normalizeEntities(raw: unknown): { name: string; type: string }[] {
   return raw
     .filter((e): e is { name: string; type?: string } => typeof e === "object" && e !== null && typeof (e as { name?: unknown }).name === "string" && (e as { name: string }).name.trim() !== "")
     .slice(0, 8)
-    .map((e) => ({ name: e.name.trim().slice(0, 40), type: (e.type ?? "其他").slice(0, 10) }));
+    .map((e) => ({ name: e.name.trim().slice(0, 40), type: String(e.type ?? "其他").slice(0, 10) }));
 }
 
 function normalizeAI(s: string): string {

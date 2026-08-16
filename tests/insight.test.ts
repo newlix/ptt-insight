@@ -152,6 +152,18 @@ test("entities capped at 8", () => {
   expect(an.entities.length).toBe(8);
 });
 
+test("refuter gaps: hostile field types don't throw", () => {
+  // e.type numeric (was TypeError on .slice)
+  const g1 = parseAnalysis(JSON.stringify({ tldr: "t", entities: [{ name: "X", type: 5 }] }));
+  expect(g1.entities).toEqual([{ name: "X", type: "5" }]);
+  // top_comments as string (was throw on .join outside parse retry)
+  const g2 = parseAnalysis('{"tldr":"t","top_comments":"單一字串"}');
+  expect(g2.top_comments).toEqual([]);
+  // entities null member / nested name
+  const g3 = parseAnalysis(JSON.stringify({ tldr: "t", entities: [null, { name: { deep: true } }, { name: "ok", type: "遊戲" }] }));
+  expect(g3.entities).toEqual([{ name: "ok", type: "遊戲" }]);
+});
+
 test("schema_ver<2 rows re-enter the pending queue", async () => {
   const db = openMemoryDB();
   migrate(db);
