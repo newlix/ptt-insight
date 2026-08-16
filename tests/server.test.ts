@@ -218,6 +218,27 @@ test("GET /trends and /rising render", async () => {
   expect(rbody).toContain("rising-page");
 });
 
+test("GET /u/:author lists hot-board articles by author", async () => {
+  // seeded articles use author1 (board TestBoard, hot only when set below)
+  db.prepare(`UPDATE boards SET is_hot = 1 WHERE id = 1`).run();
+  const page = await GET("/u/author1");
+  expect(page.status).toBe(200);
+  const body = await page.text();
+  expect(body).toContain("user-page");
+  expect(body).toContain("TestBoard");
+  expect(body).toContain("article 1");
+
+  const none = await GET("/u/nobody123");
+  expect(none.status).toBe(404);
+  db.prepare(`UPDATE boards SET is_hot = 0 WHERE id = 1`).run();
+});
+
+test("article page author links to /u/:author", async () => {
+  const page = await GET("/bbs/TestBoard/M.1001.A.A1.html");
+  const body = await page.text();
+  expect(body).toContain(`href="/u/author1"`);
+});
+
 test("GET /b/{board} renders board, unknown board → not-collected page", async () => {
   const ok = await GET("/b/TestBoard");
   expect(ok.status).toBe(200);

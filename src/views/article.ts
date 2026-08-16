@@ -17,7 +17,7 @@ export function pttArticlePage(d: ArticleDetail): string {
     d.boardName,
     `<div class="ptt-container ptt-pb56 article-page">
 <div class="article-wrap">
-<div class="metaline"><span class="article-meta-tag">作者</span><span class="article-meta-value">${esc(d.author ?? "")}</span></div>
+<div class="metaline"><span class="article-meta-tag">作者</span><span class="article-meta-value"><a class="author-link" href="/u/${encodeURIComponent(d.author ?? "")}">${esc(d.author ?? "")}</a></span></div>
 <div class="metaline metaline-board"><span class="article-meta-tag">看板</span><span class="article-meta-value">${esc(d.boardName)}</span></div>
 <div class="metaline"><span class="article-meta-tag">標題</span><span class="article-meta-value">${esc(d.title)}</span></div>
 <div class="metaline"><span class="article-meta-tag">時間</span><span class="article-meta-value">${esc(articleTime(d.postedAt))}</span></div>
