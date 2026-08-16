@@ -62,6 +62,7 @@
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | — | 主分析 provider（正式：Z.AI glm-5.2） |
 | `FALLBACK_LLM_BASE_URL` / `_API_KEY` / `_MODEL` | — | content-filter 重試 provider（正式：DeepSeek v4-pro） |
 | `WORKER_BATCH` / `WORKER_MIN_NET` | `10` / `20` | 每批篇數 / 最低 net_count（`/healthz` 的 total 同此門檻） |
+| `WORKER_MIN_AGE_DAYS` | `0` | pre-launch 積壓消化期設 `7`：<7 天文章先不分析（推文還在長，避免重分析 churn）；**上市切回 0**（同時 `INSIGHT_REFRESH_DAYS` 回 `7`） |
 | `WORKER_INTERVAL` | `0` | `0`=連續；`5m`=每 5 分鐘一批 |
 | `WORKER_OFFPEAK` | `1` | 避開平日 14-18 點 UTC+8 |
 | `INSIGHT_REFRESH_DAYS` | `7` | 推文有變的重分析窗口；`0` = 關閉 |
