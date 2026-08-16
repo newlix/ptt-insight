@@ -286,3 +286,13 @@ curl 三頁型取渲染輸出，與官方基準逐項比對（結構/class/顏�
 - 決策記錄：不引入 Postgres（repo 史前就是 PG→SQLite 合併；200 萬列 B-tree/前綴 LIKE
   足夠；D1 同 SQL 不白做）。真正的難點是別名正規化——`entity_aliases` 已建、查詢路徑
   已支援展開，等資料量大後手動/半自動養。
+
+# 任務 9.6/9.7 — 刪文存檔 + 板級日報（2026-08-16，session 2）
+
+- `/deleted`（9a 卡）：mirror 軟刪文章存檔頁，按日分組，推/噓/摘要/節錄。現況 73 篇全低推
+  （max net 10）——爆文刪除是稀有事件，頁面先架好等事件，發生即自動留證。
+- `/digest`（9.6a/b）：每熱門板每日一次 LLM 日報，燃料=近 24h 新生成的 insights（pre-launch
+  語意=剛分析的 7 天前文章；上市後≈當日討論）。fuel<3 跳過。實測品質佳（Baseball 中職
+  戰況、Beauty 神人尋人）。成本 ~75cr/天。
+- 教訓：**bun:sqlite `.get()` 無列回 `null` 不是 `undefined`**——`!== undefined` 判存
+  恆真（hasDigest 初版 bug，測試抓到）。用 `!= null`。
