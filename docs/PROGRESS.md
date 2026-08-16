@@ -338,3 +338,13 @@ curl 三頁型取渲染輸出，與官方基準逐項比對（結構/class/顏�
 - 教訓：**SQL 列別名 snake_case vs TS 介面 camelCase**——spread 合併時 silently
   留預設值（統計全 0 但總數正確，乍看像「查到了但 CASE 沒命中」）。列別名一律
   `AS "camelCase"` 帶引號。
+
+# 任務 9.17/9.18 — CF 快取標頭 + 每日備份（2026-08-17）
+
+- **快取策略**（cacheFor + cachedHandler 單點）：文章頁 s-maxage=300+SWR、板索引
+  60、日報 3600、趨勢 600、爆文 60、搜尋/實體 600、/u 300、healthz/deleted
+  no-store。CF 接入即生效。
+- **備份**：04:30 timer；**教訓：線上 sqlite3 .backup 在持續寫入（爬蟲+worker）
+  下 livelock——7 分鐘未完成**。改「暫停窗」模式（stop→backup→start），1.5 秒
+  完成乾淨副本（quick_check ok，283,925 文章驗證）。14 天本地 prune。off-site
+  R2 上傳 TODO（帳號開好就加一行 rclone/aws cli）。
