@@ -2,43 +2,48 @@
 
 ## 緣起（[measured] 本 session 取證）
 
-resume 後發現 healthz `total` 異常 → sqlite 對 backup 取證：
-- **47,004 篇文章於 03:00–04:00 被軟刪除**（histogram by deleted_at）；刪除潮
-  2026-08-15 20:06 → 08-16 06:11，受害者集中 **C_Chat 29,477 / Marginalman 5,265**。
-- journal 02:55：數十個 dorm 板（NCCU06_CHI、alumni 板…）同一分鐘全部
-  "new articles found" → **PTT 維護時窗（~03:00）提供 stale/異常 index 快照**，
-  [inferred] 這是外部觸發源。
-- 現行 `detectVanishedArticles`（src/crawler/crawl/incremental.ts:116）：
-  單次 page-1 快照 → candidates = url_timestamp > oldest 且不在 present；
-  驗證 = 再抓第二新頁（pager 上頁）排除「僅滑落」。**弱點**：
-  1. stale 快照下 oldest 倒退數天 → candidates 數千（C_Chat 29.5K）；
-  2. 驗證頁同時 stale → 全數「確認刪除」；
-  3. 無 mass-deletion 護欄；
-  4. **無復活路徑**：upsert 不清 deleted_at、getArticleByBoardUrlID 不濾 deleted →
-     文章重新出現在 index 上也不會復原（錯殺 = 永久）。
-- baseline 每小時真實刪文僅 ~1–13 篇（08-15 各小時 histogram）。
-- 備援現況：backups/ 有 00:35/01:12/04:00 三份（04:00 份不含 WAL，不可靠）；
-  軟刪除其實 **資料本體仍在 live DB**（content/pushes/insights 完整）→
-  復原 = 清 deleted_at，不需回滾 backup。
+resume 後發現 healthz `total` 異常 → sqlite 對 backup + journal 取證。
+時間線注意：journal 時間戳為 local（+08）、DB deleted_at 以 UTC 解讀。
+- 假刪除並非單一事件：08-14 前 3 篇 → 08-15 15,337 → **08-16 56,228+**
+  （修復部署前持續 ~100/min）。高峰 local 11:00 = 35,262 篇/小時
+  —— 正是任務 4 部署（10:47 restart → 全部活躍板立即到期被掃）後的第一小時。
+- 受害者：**C_Chat 29,477 / Marginalman 5,265**（08-16 04:00 backup 差分）
+  + local 11:00 起擴及 movie/SportLottery/Baseball 等（journal `deleted:` 行）。
+- **根因（curl 實證）＝置底文**：C_Chat page-1 尾部帶 2 個月老的置底文
+  （`M.1780992084` ≈ −68d），movie page-1/2 同款。原啟發式
+  「ts > page-1 oldest 且不在頁上 = 已刪除」在置底文板完全反轉：
+  oldest = 數月前 → 所有滑落的近期文章全是候選；驗證頁（第二新頁）的
+  prevOldest 同樣被置底文污染 → 灰區消失 → 全數誤刪。
+- 次要觸發：stale/部分 index 快照（local 02:55/10:55 dorm 板同分鐘全部
+  "new articles found" = PTT 異常快照）→ 暫態候選暴增。
+- 放大器：restart 後所有板立即到期（35K/小時主因）；任務 4 的 5× 檢查頻率（次因）。
+- **無復活路徑**：upsert 不清 deleted_at、getArticleByBoardUrlID 不濾 deleted →
+  文章重新出現在 index 上也不會復原（錯殺 = 永久）。
+- 軟刪除資料本體仍在 live DB（content/pushes/insights 完整）→
+  復原 = 清 deleted_at，不需回滾 backup（backups/ 00:35/01:12/04:00 三份，
+  04:00 份不含 WAL 僅供參考）。
 
-## 設計（防護層次：快照複核 → 量護欄 → 滑落驗證 → 復活）
+## 設計（防護層次：快照複核 → 矛盾界 → 滑落邊界 → 量護欄 → 復活）
 
 ### 卡 6.1 — vanish detection 硬化 + 復活
-`detectVanishedArticles` 重寫（拋棄 maxPage 參數語意，改用 fresh parse 的 pager）：
-1. **Stage 1 快照複核**：candidates > 0 時**重抓最新頁**重算 candidates；
-   重算後為空 → 記 log 返回（暫態異常自癒）。抓取失敗 → 返回（寧可不刪）。
-2. **Stage 2 量護欄**：candidates > `VANISH_GUARD_MAX`（=100，註明理由：
-   baseline 1–13/h、真實版規清除極少 >100/檢查窗）→ `console.error` 大聲留痕 + 返回。
-3. **Stage 3 滑落驗證**（保留原語意）：抓第二新頁；在場 → 未刪；
-   比 prevOldest 舊 → 灰區不動；否則 markArticleDeleted。
+`detectVanishedArticles` 重寫（v1 先擋量、v2 補置底文根因）：
+1. **Stage 1 快照複核**：candidates > 0 時**重抓最新頁**重算；重算後為空 →
+   log 返回（暫態 stale 自癒）。抓取失敗 → 返回（寧可不刪）。
+2. **Stage 2 矛盾界**：候選 ts > 快照 newest → 快照無法裁決該文（健康頁必然
+   列出更新文 = 快照 stale）→ 剔除。置底文對 max 無效，界線穩定。
+3. **Stage 3 滑落邊界**：抓第二新頁，以**其 newest entry** 為 pages 1–2 覆蓋
+   邊界（置底文是古代時間戳，污染不了 max）。在第二新頁上 → 滑落未刪；
+   ts ≤ 邊界 → 超出覆蓋灰區不動；否則刪。抓取失敗 → 返回。
+4. **Stage 4 量護欄**：narrowed candidates > `VANISH_GUARD_MAX`（=100）→
+   `console.error` 拒絕 + 返回（真實版規清除極少 >100/檢查窗）。
 - **復活**：`processBoardIncremental` 既有文章分支 — `existing.deletedAt` 且
   entry 在最新頁 → `resurrectArticle`（清 deleted_at）+ log。文章出現在 index
-  = 存在於 PTT 的直接證據，勝過舊刪除標記。`updateArticlePushes` 的
-  NotFoundError→markArticleDeleted（直接 404）維持不變。
-- 測試（tests/crawler/crawl/deletion.test.ts 擴充）：stale 風暴（150 候選，
-  護欄攔下）、暫態 stale（第一次 stale 第二次 fresh → 不刪）、真刪除仍偵測、
-  滑落救援（既有）、復活、驗證頁抓取失敗不刪。既有 4 測試必須全過
-  （static routes = 一致快照，新邏輯下語意不變）。
+  = 存在於 PTT 的直接證據。`updateArticlePushes` 的 NotFoundError→
+  markArticleDeleted（直接 404）維持不變。
+- 測試（deletion.test.ts）：stale 快照矛盾界（150 候選全數 > 快照 newest → 0 刪）、
+  置底文板（邊界內 VICTIM 刪、邊界外 RESCUED/OLDSTORED 活）、narrowed 護欄
+  （150 候選介於邊界與 newest → 拒絕）、暫態 stale、驗證頁失敗、Stage1 失敗、
+  復活；既有 4 測試（真刪除/滑落/灰區/偵測）語意保留全過。
 
 ### 卡 6.2 — E2E 重現 + docs
 - 以 testutil 真 Bun.serve 模擬「03:00 現場」：seed 板 + 已存文章、首抓 stale

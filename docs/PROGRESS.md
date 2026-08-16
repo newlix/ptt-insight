@@ -7,19 +7,24 @@
 ## 發現過程
 
 resume 巡檢發現 healthz total 異常下降 → backup 對照取證。關鍵校正：
-journal 時間戳是 local（+08）、DB deleted_at 以 UTC 解讀 — 首輪「03:00 風暴、服務停機
-期間外部刪除」的推論是時區錯覺；真實時間線：**任務 4 部署（10:47，檢查頻率 5×）後
-11:00 一小時內 35,262 篇假刪除**，且持續進行中（修復部署前 ~100/min）。機制：
-index 快照異常（stale/partial）→ 候選數千 → 驗證頁同時異常 → 全數誤標；無護欄、
-無復活。08-15 已有 15,337 篇（低頻時代同機制）。
+journal 時間戳是 local（+08）、DB deleted_at 以 UTC 解讀 — 首輪「03:00 風暴、
+服務停機期間外部刪除」的推論是時區錯覺；真實時間線：**任務 4 部署（10:47
+restart → 全板立即到期）後 local 11:00 一小時 35,262 篇假刪**，修復部署前
+持續 ~100/min。**根因 = 置底文**（curl 實證 C_Chat page-1 尾帶 −68d 置底文）：
+「ts > page-1 oldest = 未滑落」啟發式在置底文板反轉，驗證頁 prevOldest 同被
+污染 → 灰區消失 → 全刪。08-15 已 15,337 篇（同機制低頻版）。
 
 ## 落地
 
-- `detectVanishedArticles` 三層防護：Stage1 重抓最新頁複核（暫態異常自癒）、
-  Stage2 `VANISH_GUARD_MAX=100` 量護欄（大聲拒絕）、Stage3 滑落驗證（原語意）。
-- `resurrectArticle`：文章重現 index → 清 deleted_at（存在性直接證據）。
-- 測試 +5（風暴護欄/暫態/驗證失敗/Stage1 失敗/復活），97 pass。
-- 緊急部署（資料持續受損，先止血後 refuter — 明示偏離常規順序）。
+- v1（14:55 緊急部署止血）：Stage1 重抓複核 + `VANISH_GUARD_MAX=100` 護欄。
+  部署即證：0 刪除（原 ~100/min），護欄連續攔下 SportLottery/movie/
+  BaseballXXXX/Baseball 的 1.6K–4K 候選（= 舊碼正在執行的誤刪集合）。
+- v2（根因修）：Stage2 矛盾界（候選 ts > 快照 newest → 快照 stale 剔除）、
+  Stage3 滑落邊界改用**第二新頁 newest**（置底文污染不了 max）、Stage4 護欄
+  移到 narrowed 之後（置底文板不再永久噴 refusal）。
+- `resurrectArticle`：文章重現 index → 清 deleted_at。
+- 測試 97→99（置底文板 VICTIM/RESCUED、narrowed 護欄；stale 測改走矛盾界），
+  既有 4 測語意保留。
 
 ## 待辦
 

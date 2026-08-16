@@ -121,20 +121,24 @@ export async function processBoardIncremental(
 const VANISH_GUARD_MAX = 100;
 
 // detectVanishedArticles marks articles as deleted when they vanish from the
-// index while still being newer than the page's oldest entry.
+// index while provably inside its coverage.
 //
-// An article that scrolls off the latest page becomes OLDER than that page's
-// oldest entry — so "newer than the oldest entry but absent" can only mean the
-// article was removed. Protection layers, in order:
-//   1. Re-fetch the latest page and recompute candidates — a single anomalous
-//      (stale/partial) snapshot self-heals; if the fresh fetch shows the
-//      articles present, nothing is deleted.
-//   2. Mass guard — more than VANISH_GUARD_MAX candidates is treated as an
-//      anomalous snapshot, not a deletion event.
-//   3. Scroll verification — the second-newest page (where a busy board's
-//      articles actually scroll to) is fetched once; candidates present there
-//      are alive. Older-than-that-page's-oldest candidates stay untouched
-//      (gray zone).
+// The original heuristic ("newer than the page's oldest entry but absent")
+// breaks on boards with 置底文: C_Chat's page 1 carries 2-month-old pinned
+// entries, so `oldest` is ancient and EVERY scrolled-off article qualifies as
+// vanished — that alone soft-deleted 29.5K C_Chat articles (2026-08-16,
+// 65K total across boards). Protection layers, in order:
+//   1. Re-fetch the latest page and recompute candidates — a transient
+//      anomalous (stale/partial) snapshot self-heals here.
+//   2. Contradiction bound — an article NEWER than the snapshot's newest
+//      entry cannot be judged: a healthy page would list it. Skip (the
+//      snapshot must be stale).
+//   3. Scroll boundary — the second-newest page's NEWEST entry is the true
+//      boundary of pages 1–2 coverage (a max over timestamps, immune to
+//      ancient pinned entries). An article newer than that boundary must be
+//      on page 1 if alive; older ones are beyond coverage (gray zone).
+//   4. Mass guard — more than VANISH_GUARD_MAX confirmed candidates is
+//      treated as an anomaly, not a deletion event.
 async function detectVanishedArticles(
   fetcher: Fetcher,
   store: Store,
@@ -155,13 +159,47 @@ async function detectVanishedArticles(
     if (!isAborted(e, signal)) console.error(`vanished recheck ${board.name}:`, e);
     return; // cannot confirm — prefer not deleting
   }
-  const candidates = vanishedCandidates(store, board, freshEntries);
-  if (candidates.length === 0) {
+  const broad = vanishedCandidates(store, board, freshEntries);
+  if (broad.length === 0) {
     console.log(`vanished ${board.name}: ${first.length} candidates evaporated on re-fetch (anomalous snapshot), skipping`);
     return;
   }
 
-  // Stage 2 — refuse implausible mass deletions.
+  // Stage 2 — contradiction bound: newer than the snapshot's newest entry
+  // means the snapshot cannot judge this article.
+  const freshNewest = newestTimestamp(freshEntries);
+  let candidates = freshNewest > 0 ? broad.filter((c) => (urlIdTimestamp(c.urlId) ?? 0) <= freshNewest) : [];
+
+  // Stage 3 — fetch the second-newest page and apply the scroll boundary.
+  let prevPresent = new Set<string>();
+  let prevNewest = 0;
+  const prevPage = freshMaxPageIndex - 1;
+  if (prevPage >= 1) {
+    let prevEntries: typeof entries;
+    try {
+      const html = await fetcher.fetchIndexPage(board.name, prevPage, signal);
+      ({ entries: prevEntries } = parseIndexPage(html));
+    } catch (e) {
+      if (!isAborted(e, signal)) console.error(`vanished verify ${board.name} page ${prevPage}:`, e);
+      return; // cannot verify — prefer not deleting
+    }
+    for (const e of prevEntries) {
+      if (e.deleted || e.urlId === "") continue;
+      prevPresent.add(e.urlId);
+      const ts = urlIdTimestamp(e.urlId);
+      if (ts !== null && ts > prevNewest) prevNewest = ts;
+    }
+    // Newer than the second-newest page's top entry → must be on page 1 if
+    // alive. At/below it → beyond pages 1–2 coverage, gray zone.
+    candidates = candidates.filter((c) => {
+      if (prevPresent.has(c.urlId)) return false; // merely scrolled — still alive
+      const ts = urlIdTimestamp(c.urlId);
+      return ts !== null && prevNewest > 0 && ts > prevNewest;
+    });
+  }
+  if (candidates.length === 0) return;
+
+  // Stage 4 — refuse implausible mass deletions.
   if (candidates.length > VANISH_GUARD_MAX) {
     console.error(
       `vanished ${board.name}: refusing mass deletion of ${candidates.length} candidates (guard ${VANISH_GUARD_MAX}) — snapshot likely anomalous`,
@@ -169,42 +207,22 @@ async function detectVanishedArticles(
     return;
   }
 
-  // Stage 3 — verify against the second-newest page before concluding deletion.
-  const prevPage = freshMaxPageIndex - 1;
-  if (prevPage < 1) {
-    // No older page exists — candidates can't be anywhere else.
-    for (const c of candidates) {
-      store.markArticleDeleted(board.id, c.urlId);
-      console.log(`deleted: ${board.name}/${c.urlId}`);
-    }
-    return;
-  }
-
-  let prevEntries: typeof entries;
-  try {
-    const html = await fetcher.fetchIndexPage(board.name, prevPage, signal);
-    ({ entries: prevEntries } = parseIndexPage(html));
-  } catch (e) {
-    if (!isAborted(e, signal)) console.error(`vanished verify ${board.name} page ${prevPage}:`, e);
-    return;
-  }
-
-  const prevPresent = new Set<string>();
-  let prevOldest = 0;
-  for (const e of prevEntries) {
-    if (e.deleted || e.urlId === "") continue;
-    prevPresent.add(e.urlId);
-    const ts = urlIdTimestamp(e.urlId);
-    if (ts !== null && (prevOldest === 0 || ts < prevOldest)) prevOldest = ts;
-  }
-
   for (const c of candidates) {
-    if (prevPresent.has(c.urlId)) continue; // merely scrolled to the previous page — still alive
-    const ts = urlIdTimestamp(c.urlId);
-    if (ts !== null && prevOldest > 0 && ts <= prevOldest) continue; // older than the previous page's coverage — gray zone
     store.markArticleDeleted(board.id, c.urlId);
     console.log(`deleted: ${board.name}/${c.urlId}`);
   }
+}
+
+// newestTimestamp returns the max entry timestamp on a parsed index page
+// (0 when none parse). Pinned 置底文 are ancient, so a max is immune to them.
+function newestTimestamp(entries: Awaited<ReturnType<typeof parseIndexPage>>["entries"]): number {
+  let newest = 0;
+  for (const e of entries) {
+    if (e.deleted || e.urlId === "") continue;
+    const ts = urlIdTimestamp(e.urlId);
+    if (ts !== null && ts > newest) newest = ts;
+  }
+  return newest;
 }
 
 // vanishedCandidates returns stored articles newer than the snapshot's oldest

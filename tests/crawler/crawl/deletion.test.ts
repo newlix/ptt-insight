@@ -105,13 +105,15 @@ function articlePage(urlId: string): string {
 // index pages; the old code mass-deleted 47K articles (C_Chat 29.5K) from one
 // snapshot. The three defenses below must each stop that failure mode. ---
 
-test("mass-deletion guard: stale snapshot yielding 150 candidates is refused", async () => {
-  // Stale snapshot: only two ancient entries — every stored article is newer
-  // than its oldest entry and absent from it. Static route = both the first
-  // fetch and the Stage-1 re-fetch see the same stale page.
+test("stale snapshot: every stored article is newer than the snapshot's newest — none deleted", async () => {
+  // Stale snapshot: only two ancient entries. Static route = both the first
+  // fetch and the Stage-1 re-fetch see the same stale page. The contradiction
+  // bound (candidates must be at/below the snapshot's newest entry) empties
+  // the candidate set: a healthy page would list anything newer.
   const e = env(
     pathServer({
       "/bbs/DelBoard/index.html": deletionIndexPage(600, 599, "M.1000000000.A.S1", "M.1000000001.A.S2"),
+      "/bbs/DelBoard/index599.html": deletionIndexPage(599, 598, "M.1000000000.A.S1"),
       "/bbs/DelBoard/M.1000000000.A.S1.html": articlePage("M.1000000000.A.S1"),
       "/bbs/DelBoard/M.1000000001.A.S2.html": articlePage("M.1000000001.A.S2"),
     }),
@@ -120,6 +122,61 @@ test("mass-deletion guard: stale snapshot yielding 150 candidates is refused", a
   const board = e.store.upsertBoard({ name: "DelBoard" });
   for (let i = 0; i < 150; i++) {
     insertArticle(e, board.id, `M.${1000100000 + i}.A.N${i}`, 1000100000 + i);
+  }
+
+  await processBoardIncremental(e.fetcher, e.store, board);
+
+  const n = e.db.prepare("SELECT count(*) AS c FROM articles WHERE deleted_at IS NOT NULL").get() as {
+    c: number;
+  };
+  expect(n.c).toBe(0);
+});
+
+test("置底文 board: scroll boundary is the verify page's newest entry, not page-1's oldest", async () => {
+  // C_Chat scenario (2026-08-16 incident): page 1 carries an ancient pinned
+  // entry, so "newer than page-1's oldest" covers months of scrolled-off
+  // articles. The verify page's NEWEST entry is the true pages-1–2 boundary.
+  const e = env(
+    pathServer({
+      // page 1: one recent article + one 2-month-old pinned entry at the tail
+      "/bbs/DelBoard/index.html": deletionIndexPage(3, 2, "M.2000000000.A.TOP", "M.1000000000.A.PIN"),
+      // page 2 (second-newest): top = scroll boundary, plus another pin
+      "/bbs/DelBoard/index2.html": deletionIndexPage(2, 1, "M.1900000000.A.BOUND", "M.1000000001.A.PIN2"),
+      "/bbs/DelBoard/M.2000000000.A.TOP.html": articlePage("M.2000000000.A.TOP"),
+    }),
+  );
+
+  const board = e.store.upsertBoard({ name: "DelBoard" });
+  // Within page-1/2 coverage (newer than the boundary) and absent → genuinely
+  // deleted: it would have to be listed between TOP and the boundary.
+  insertArticle(e, board.id, "M.1950000000.A.VICTIM", 1950000000);
+  // Below the boundary → beyond pages 1–2 coverage, gray zone — the 29.5K
+  // C_Chat articles that the old heuristic wrongly executed.
+  insertArticle(e, board.id, "M.1850000000.A.RESCUED", 1850000000);
+  insertArticle(e, board.id, "M.1500000000.A.OLDSTORED", 1500000000);
+
+  await processBoardIncremental(e.fetcher, e.store, board);
+
+  expect(e.store.getArticleByBoardUrlID(board.id, "M.1950000000.A.VICTIM")!.deletedAt).not.toBeNull();
+  expect(e.store.getArticleByBoardUrlID(board.id, "M.1850000000.A.RESCUED")!.deletedAt).toBeNull();
+  expect(e.store.getArticleByBoardUrlID(board.id, "M.1500000000.A.OLDSTORED")!.deletedAt).toBeNull();
+});
+
+test("mass-deletion guard applies to the narrowed candidate set", async () => {
+  // 150 stored articles sit between the verify page's newest entry and the
+  // page-1 newest entry, absent from both pages — deletion-shaped, but >100:
+  // the guard must refuse even after pin-aware narrowing.
+  const e = env(
+    pathServer({
+      "/bbs/DelBoard/index.html": deletionIndexPage(3, 2, "M.3000000000.A.TOP", "M.1000000000.A.PIN"),
+      "/bbs/DelBoard/index2.html": deletionIndexPage(2, 1, "M.2000000000.A.BOUND", "M.1999999999.A.C"),
+      "/bbs/DelBoard/M.3000000000.A.TOP.html": articlePage("M.3000000000.A.TOP"),
+    }),
+  );
+
+  const board = e.store.upsertBoard({ name: "DelBoard" });
+  for (let i = 0; i < 150; i++) {
+    insertArticle(e, board.id, `M.${2000000001 + i}.A.N${i}`, 2000000001 + i);
   }
 
   await processBoardIncremental(e.fetcher, e.store, board);
