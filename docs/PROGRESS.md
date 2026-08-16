@@ -328,3 +328,13 @@ curl 三頁型取渲染輸出，與官方基準逐項比對（結構/class/顏�
   5.1ms / 55.7ms。教訓：**每個新公開路由上線前 curl 計時**，>100ms 就是索引債。
 - SQLite 併發結論：WAL 讀寫不互斥；同步綁定的天花板 ≈ 1000/平均查詢ms req/s，
   索引後全站毫秒級 → 數百~千 req/s origin 容量，CF 快取再吸收九成——離撐不住很遠。
+
+# 任務 9.16 — 推文足跡（2026-08-17）
+
+- `/u/:id` 加「推文足跡」區：統計（推/噓/→/板數）+ 最新 50 則帶來源文章連結。
+  只推不發文的 ID 也有頁面（原本會 404）。
+- migration 0008 `idx_pushes_user(user_id, article_id, seq)`——9.1M 列，/u 查詢
+  毫秒級（18ms 實測）。
+- 教訓：**SQL 列別名 snake_case vs TS 介面 camelCase**——spread 合併時 silently
+  留預設值（統計全 0 但總數正確，乍看像「查到了但 CASE 沒命中」）。列別名一律
+  `AS "camelCase"` 帶引號。
