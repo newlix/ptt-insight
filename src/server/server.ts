@@ -24,6 +24,7 @@ export interface ServerOptions {
   pageSize: number;
   hot: HotBoardsCache;
   minNet?: number; // WORKER_MIN_NET — keeps /healthz "total" consistent with the worker's claim threshold
+  deletedToken?: string; // DELETED_ARCHIVE_TOKEN — when set, /deleted requires ?token=; unset → 404 (not a public feature: respect PTT deletion authority)
 }
 
 const html = (body: string, status = 200): Response =>
@@ -85,9 +86,13 @@ export function createServer(opts: ServerOptions) {
         return html(searchPage(q, searchEntities(opts.db, q, 30)));
       }
       if (path === "/deleted") {
+        // Internal archive only: requires a token and is unreachable when the
+        // token is unset (deleted content is preserved in the mirror, but not
+        // republished — PTT authors/moderators hold the deletion authority).
+        const token = opts.deletedToken ?? "";
+        if (token === "" || url.searchParams.get("token") !== token) return notFound();
         return html(deletedPage(listDeletedArticles(opts.db, 200)));
-      }
-      if (path === "/digest") {
+      }      if (path === "/digest") {
         return html(digestPage(listDigests(opts.db)));
       }
       const ent = path.match(/^\/e\/([^/]+)$/);

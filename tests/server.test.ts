@@ -38,6 +38,7 @@ const app = createServer({
   db,
   pageSize: 30,
   hot: new HotBoardsCache(`http://localhost:${fixtureServer.port}`, 60_000),
+  deletedToken: "test-token",
 });
 
 async function GET(path: string): Promise<Response> {
@@ -157,26 +158,35 @@ test("GET /search and /e/:name serve entity pages", async () => {
   db.prepare(`DELETE FROM article_insights WHERE article_id = ?`).run(aid);
 });
 
-test("GET /deleted renders soft-deleted archive", async () => {  const empty = await GET("/deleted");
-  expect(empty.status).toBe(200);
-  expect(await empty.text()).toContain("刪文存檔");
-
-  // seed: soft-delete one seeded article with an insight
+test("GET /deleted is token-gated internal archive", async () => {
   const aid = (db.prepare(`SELECT id FROM articles WHERE url_id = 'M.1005.A.A5'`).get() as { id: number }).id;
   db.prepare(
     `INSERT INTO article_insights (article_id, tldr, model, schema_ver) VALUES (?, '刪文摘要', 'm', 2)`,
   ).run(aid);
   db.prepare(`UPDATE articles SET deleted_at = ? WHERE id = ?`).run(Math.floor(Date.now() / 1000) - 3600, aid);
 
-  const page = await GET("/deleted");
-  const body = await page.text();
+  // no token / wrong token → 404 (public sees nothing)
+  expect((await GET("/deleted")).status).toBe(404);
+  expect((await GET("/deleted?token=wrong")).status).toBe(404);
+  // right token → archive renders
+  const ok = await GET("/deleted?token=test-token");
+  expect(ok.status).toBe(200);
+  const body = await ok.text();
   expect(body).toContain("deleted-page");
   expect(body).toContain("article 5");
   expect(body).toContain("刪文摘要");
-  expect(body).toContain("del-excerpt");
 
   db.prepare(`UPDATE articles SET deleted_at = NULL WHERE id = ?`).run(aid);
   db.prepare(`DELETE FROM article_insights WHERE article_id = ?`).run(aid);
+
+  // token unset server → always 404 even with a token param
+  const appNoToken = createServer({
+    db, pageSize: 30,
+    hot: new HotBoardsCache(`http://localhost:${fixtureServer.port}`, 60_000),
+  });
+  const dark = await appNoToken.handler(new Request("http://localhost/deleted?token=test-token"));
+  expect(dark.status).toBe(404);
+  appNoToken.stop();
 });
 
 test("GET /digest renders board digests", async () => {
