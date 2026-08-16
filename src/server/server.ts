@@ -12,6 +12,8 @@ import { pttArticlePage } from "../views/article.ts";
 import { searchPage } from "../views/search.ts";
 import { entityPage } from "../views/entity.ts";
 import { deletedPage } from "../views/deleted.ts";
+import { digestPage } from "../views/digest.ts";
+import { listDigests } from "../repo/digests.ts";
 import { searchEntities, entityTimeline, entityArticles } from "../repo/entities.ts";
 import { boardsListPage } from "../views/pages.ts";
 
@@ -84,6 +86,9 @@ export function createServer(opts: ServerOptions) {
       }
       if (path === "/deleted") {
         return html(deletedPage(listDeletedArticles(opts.db, 200)));
+      }
+      if (path === "/digest") {
+        return html(digestPage(listDigests(opts.db)));
       }
       const ent = path.match(/^\/e\/([^/]+)$/);
       if (ent) {

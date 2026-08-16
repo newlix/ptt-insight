@@ -23,6 +23,7 @@ ${boardCrumb}
 <a href="https://www.ptt.cc/contact.html" class="topbar-link topbar-right">聯絡資訊</a>
 <form action="/search" method="get" class="topbar-search topbar-right"><input class="topbar-search-input" type="text" name="q" placeholder="實體搜尋"/></form>
 <a href="/deleted" class="topbar-link topbar-right">刪文存檔</a>
+<a href="/digest" class="topbar-link topbar-right">日報</a>
 </div></div>
 ${children}
 </body>

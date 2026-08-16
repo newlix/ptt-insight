@@ -157,8 +157,7 @@ test("GET /search and /e/:name serve entity pages", async () => {
   db.prepare(`DELETE FROM article_insights WHERE article_id = ?`).run(aid);
 });
 
-test("GET /deleted renders soft-deleted archive", async () => {
-  const empty = await GET("/deleted");
+test("GET /deleted renders soft-deleted archive", async () => {  const empty = await GET("/deleted");
   expect(empty.status).toBe(200);
   expect(await empty.text()).toContain("刪文存檔");
 
@@ -178,6 +177,24 @@ test("GET /deleted renders soft-deleted archive", async () => {
 
   db.prepare(`UPDATE articles SET deleted_at = NULL WHERE id = ?`).run(aid);
   db.prepare(`DELETE FROM article_insights WHERE article_id = ?`).run(aid);
+});
+
+test("GET /digest renders board digests", async () => {
+  const empty = await GET("/digest");
+  expect(empty.status).toBe(200);
+  expect(await empty.text()).toContain("日報生成中");
+
+  db.prepare(`UPDATE boards SET is_hot = 1 WHERE id = 1`).run();
+  db.prepare(
+    `INSERT INTO board_digests (board_id, day, digest, article_count, model) VALUES (1, '2026-08-16', '測試日報內容', 5, 'stub')`,
+  ).run();
+  const page = await GET("/digest");
+  const body = await page.text();
+  expect(body).toContain("digest-page");
+  expect(body).toContain("TestBoard");
+  expect(body).toContain("測試日報內容");
+  db.prepare(`DELETE FROM board_digests`).run();
+  db.prepare(`UPDATE boards SET is_hot = 0 WHERE id = 1`).run();
 });
 
 test("GET /b/{board} renders board, unknown board → not-collected page", async () => {

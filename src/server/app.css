@@ -698,3 +698,11 @@ a { text-decoration: none; }
 .del-board { color: #9cf; }
 .del-tldr { color: #0a0; font-size: 14px; padding-top: 2px; }
 .del-excerpt { color: var(--z400); font-size: 14px; padding-top: 4px; line-height: 1.5; }
+
+/* --- /digest board digests --- */
+.digest-page { padding-bottom: 56px; }
+.digest-board { padding: 12px 2px; border-bottom: 1px solid #222; }
+.digest-board-name { color: #9cf; font-size: 17px; font-weight: bold; text-decoration: none; }
+.digest-board-name:hover { text-decoration: underline; }
+.digest-meta { color: var(--z500); font-size: 13px; margin-left: 10px; }
+.digest-text { color: #ccc; font-size: 15px; line-height: 1.6; padding-top: 6px; }

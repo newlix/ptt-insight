@@ -1,5 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { openDB } from "./db/sqlite.ts";
+import type { DB } from "./db/sqlite.ts";
 import { migrate } from "./db/migrate.ts";
 import { createStore } from "./db/store.ts";
 import { Fetcher } from "./crawler/ptt/fetcher.ts";
@@ -13,6 +14,20 @@ import { LLMClient } from "./llm/client.ts";
 import { InsightWorker } from "./insight/worker.ts";
 import { HotBoardsCache, HOT_BOARDS_URL } from "./crawler/ptt/hotboards.ts";
 import { createServer } from "./server/server.ts";
+import { generateDigest, storeDigest, hasDigest } from "./repo/digests.ts";
+
+async function runDailyDigests(db: DB, client: LLMClient, model: string): Promise<void> {
+  const boards = db.prepare(`SELECT id, name FROM boards WHERE is_hot = 1 ORDER BY name`).all() as { id: number; name: string }[];
+  const day = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+  const since = Math.floor(Date.now() / 1000) - 24 * 3600;
+  for (const b of boards) {
+    if (hasDigest(db, b.id, day)) continue;
+    const d = await generateDigest(db, client, model, b.id, b.name, day, since);
+    if (d === null) continue;
+    storeDigest(db, d);
+    console.log(`board digest stored (${b.name} ${day}, ${d.articleCount} 篇)`);
+  }
+}
 
 function envStr(key: string, def: string): string {
   const v = process.env[key];
@@ -102,7 +117,6 @@ async function main(): Promise<void> {
   const store = createStore(db);
 
   const tasks: Promise<void>[] = [];
-
   if (runCrawler) {
     // Rate budget: ONE global bucket for the whole politeness cap, plus a
     // sub-bucket capping backfill+discovery at 60%. Incremental draws only
@@ -193,6 +207,11 @@ async function main(): Promise<void> {
       refreshDays: insightRefreshDays,
     });
     tasks.push(worker.run(sig));
+    // Board digest loop: hourly, fill in today's digest per hot board from the
+    // insights generated in the trailing 24h (~30 boards ≈ a few LLM calls).
+    const digestTimer = setInterval(() => void runDailyDigests(db, client, llmModel).catch((e) => console.error("digest loop:", e)), 3600_000);
+    digestTimer.unref?.();
+    void runDailyDigests(db, client, llmModel).catch((e) => console.error("digest loop:", e));
   } else {
     console.log("insight worker disabled (RUN_WORKER=0)");
   }
