@@ -348,3 +348,17 @@ curl 三頁型取渲染輸出，與官方基準逐項比對（結構/class/顏�
   下 livelock——7 分鐘未完成**。改「暫停窗」模式（stop→backup→start），1.5 秒
   完成乾淨副本（quick_check ok，283,925 文章驗證）。14 天本地 prune。off-site
   R2 上傳 TODO（帳號開好就加一行 rclone/aws cli）。
+
+# 任務 9.19 — /status 儀表板（2026-08-17 晨）
+
+- `/status`：v2 總數/回流/v1、eligible/gated 佇列、1h/24h 產能、錯誤冷卻、日報數、
+  DB 大小、credits 24h/7d vs 140K 週預算條。公開聚合值，無敏感資料。
+- healthz 補年齡門（minAgeSecs）——與 worker claim SQL 同式（HEALTHZ_CONSISTENT
+  自洽驗證：兩邊各算一次比相等）。
+- **隔夜發現**：eligible 佇列一夜 +9K——不是 worker 慢，是老文章（系列文/LIVE 串）
+  推文遲到跨過 net≥20 持續流入。佇列是**流動池**：日流入（~7-9K 老文成熟 + 未來
+  7 天線每日 ~500 新文）vs 日產能 2,900 → @c=3 佇列會維持在 ~55K 上下動態平衡而
+  非清空。若要真正清空需 c=4+（但 credit 週預算在 v2 單價 6.85cr 下只容 ~200/day
+  的重分析+滿載新文…實際是 24h 2,941 篇×6.85≈20K/日=140K/週 貼頂）。**結論：
+  pre-launch c=3 就是正確配置**，上市時 MIN_AGE=0 才是真正消化點。
+- 錯誤率 7%（9/123，4 timeout、3 max_tokens、2 parse）全走 1h 冷卻自動重試。
