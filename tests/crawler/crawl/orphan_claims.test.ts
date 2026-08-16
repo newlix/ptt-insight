@@ -22,6 +22,7 @@ test("releaseOrphanedClaims clears stale claims so boards are reclaimable after 
 
   // simulate a previous process that claimed a board then died mid-batch
   const board = e.store.upsertBoard({ name: "TestBoard" });
+  e.db.prepare("UPDATE boards SET is_hot = 1 WHERE id = ?").run(board.id); // hot-only claiming (9.13)
   e.db.prepare("UPDATE boards SET backfill_claimed_at = ?, window_floor = NULL WHERE id = ?").run(
     Math.floor(Date.now() / 1000) - 60, // claimed 1 min ago — inside the 6h exclusion
     board.id,

@@ -51,7 +51,7 @@ export function createBoardQueries(db: DB): BoardQueries {
     const row = db
       .prepare(
         `SELECT * FROM boards
-         WHERE next_check_at IS NOT NULL AND next_check_at <= ?
+         WHERE is_hot = 1 AND next_check_at IS NOT NULL AND next_check_at <= ?
          ORDER BY next_check_at
          LIMIT 1`,
       )
@@ -73,12 +73,10 @@ export function createBoardQueries(db: DB): BoardQueries {
         `SELECT * FROM boards
          WHERE backfill_complete = 0
            AND (backfill_claimed_at IS NULL OR backfill_claimed_at < ?)
-           AND (is_hot = 1 OR NOT EXISTS (
-               SELECT 1 FROM boards h
-               WHERE h.is_hot = 1 AND h.backfill_complete = 0))
+           AND is_hot = 1
            AND (window_floor IS NULL OR window_floor > (
                SELECT value FROM backfill_meta WHERE key = 'window_bottom'))
-         ORDER BY is_hot DESC, (last_backfill_page > 1), user_count DESC, id
+         ORDER BY (last_backfill_page > 1), user_count DESC, id
          LIMIT 1`,
       )
       .get(cutoff) as BoardRow | undefined;
