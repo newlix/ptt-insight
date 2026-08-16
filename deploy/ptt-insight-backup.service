@@ -1,7 +1,8 @@
 [Unit]
-Description=ptt-insight nightly DB backup
+Description=ptt-insight nightly DB backup (pauses ptt-insight for a consistent copy)
 
 [Service]
 Type=oneshot
-User=newlix
+ExecStartPre=/usr/bin/systemctl stop ptt-insight.service
 ExecStart=/bin/bash /home/newlix/ptt-insight/scripts/backup_db.sh /home/newlix/ptt-insight/ptt.db
+ExecStartPost=/bin/bash -c 'chown -R newlix:newlix /home/newlix/ptt-insight/backups && systemctl start ptt-insight.service'
