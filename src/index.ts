@@ -83,6 +83,7 @@ async function main(): Promise<void> {
   const workerMinNet = envInt("WORKER_MIN_NET", 20);
   const workerInterval = envSecs("WORKER_INTERVAL", 0);
   const insightRefreshDays = envInt("INSIGHT_REFRESH_DAYS", 7, 0);
+  const workerMinAgeDays = envInt("WORKER_MIN_AGE_DAYS", 0, 0);
   const workerOffPeak = envStr("WORKER_OFFPEAK", "1") !== "0";
 
   // web config
@@ -184,6 +185,7 @@ async function main(): Promise<void> {
       batch: workerBatch,
       concurrency: workerConcurrency,
       minNet: workerMinNet,
+      minAgeSecs: workerMinAgeDays * 86400,
       intervalSecs: workerInterval,
       offPeak: workerOffPeak,
       fallback,

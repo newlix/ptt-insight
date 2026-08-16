@@ -354,6 +354,14 @@ legacy light /boards 主題不動。產品功能零變更（僅視覺/結構）�
 - 第二輪（聚焦四修）VERDICT: PASS — 含桌面 ≥800 無伸展外漏的獨立 computed probe、
   逐帶可證偽性確認。
 
+### 卡 9.12 — pre-launch 年齡門檻（2026-08-16，使用者指示）
+緣起：積壓消化期分析 <7 天文章會觸發重分析 churn（推文還在長，每活躍小時再付 6.85cr）。
+設計：`claimPendingArticles`/`claimFilteredArticles` 加 `minAgeSecs` 過濾
+（`posted_at < now-minAge`；posted_at NULL 視為可分析；0=不過濾=上市狀態）。
+env `WORKER_MIN_AGE_DAYS`（程式預設 0=上市語意；pre-launch 部署設 7）+
+`INSIGHT_REFRESH_DAYS=0` 關閉 stale loop（上市改回 7）。上市切換：兩個 env 歸零/回 7。
+acceptance: `cd /home/newlix/github/newlix/ptt-insight && bun test 2>&1 | grep -q ' 0 fail' && bunx tsc --noEmit && rg -q 'WORKER_MIN_AGE_DAYS' src/index.ts`
+
 # 任務 8 — Insight worker 量能擴充（2026-08-16）
 
 ## 緣起

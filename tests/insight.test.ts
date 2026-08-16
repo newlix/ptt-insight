@@ -164,6 +164,27 @@ test("refuter gaps: hostile field types don't throw", () => {
   expect(g3.entities).toEqual([{ name: "ok", type: "遊戲" }]);
 });
 
+test("claimPendingArticles minAge gate: fresh articles wait, old/null analyzed, 0 = all", () => {
+  const db = openMemoryDB();
+  migrate(db);
+  db.prepare(`INSERT INTO boards (id, name) VALUES (1, 'Test')`).run();
+  const now = Math.floor(Date.now() / 1000);
+  const mk = (urlId: string, postedAt: number | null): number => {
+    db.prepare(`INSERT INTO articles (board_id, url_id, content, net_count, posted_at) VALUES (1, ?, ?, 50, ?)`).run(urlId, "z".repeat(30), postedAt);
+    return (db.prepare(`SELECT id FROM articles WHERE url_id = ?`).get(urlId) as { id: number }).id;
+  };
+  const old = mk("M.OLD.A.1", now - 8 * 86400);
+  const fresh = mk("M.FRESH.A.2", now - 2 * 86400);
+  const nullAge = mk("M.NULL.A.3", null);
+
+  // gate on (pre-launch): only old + unknown-age
+  const gated = claimPendingArticles(db, 10, 20, 7 * 86400).map((p) => p.id).sort((a, b) => a - b);
+  expect(gated).toEqual([old, nullAge].sort((a, b) => a - b));
+  expect(gated).not.toContain(fresh);
+  // gate off (launch semantics): all three
+  expect(claimPendingArticles(db, 10, 20, 0).length).toBe(3);
+});
+
 test("schema_ver<2 rows re-enter the pending queue", async () => {
   const db = openMemoryDB();
   migrate(db);

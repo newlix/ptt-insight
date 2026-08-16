@@ -60,7 +60,7 @@ function loadPending(db: DB, sql: string, ...params: (string | number)[]): Pendi
 // content_filter is excluded (handled by the fallback loop instead).
 const RETRY_ERROR_COOLDOWN_SECS = 3600;
 
-export function claimPendingArticles(db: DB, limit: number, minNet: number): PendingArticle[] {
+export function claimPendingArticles(db: DB, limit: number, minNet: number, minAgeSecs = 0): PendingArticle[] {
   return loadPending(
     db,
     `SELECT a.id, a.board_id, a.title, a.author, a.content, a.net_count
@@ -70,6 +70,7 @@ export function claimPendingArticles(db: DB, limit: number, minNet: number): Pen
        AND a.content IS NOT NULL
        AND length(a.content) > 20
        AND COALESCE(a.net_count, 0) >= ?
+       AND (? = 0 OR a.posted_at IS NULL OR a.posted_at < ?)
        AND (
          ai.id IS NULL
          OR (ai.error IS NOT NULL AND ai.error != 'content_filter' AND ai.generated_at < ?)
@@ -78,6 +79,8 @@ export function claimPendingArticles(db: DB, limit: number, minNet: number): Pen
      ORDER BY a.net_count DESC, a.posted_at DESC
      LIMIT ?`,
     minNet,
+    minAgeSecs,
+    nowSecs() - minAgeSecs,
     nowSecs() - RETRY_ERROR_COOLDOWN_SECS,
     limit,
   );
@@ -120,15 +123,18 @@ export function claimStaleArticles(
 
 // Articles whose primary-provider analysis was blocked by content filter
 // (ai.error = 'content_filter'), for retry with a fallback provider.
-export function claimFilteredArticles(db: DB, limit: number): PendingArticle[] {
+export function claimFilteredArticles(db: DB, limit: number, minAgeSecs = 0): PendingArticle[] {
   return loadPending(
     db,
     `SELECT a.id, a.board_id, a.title, a.author, a.content, a.net_count
      FROM articles a
      JOIN article_insights ai ON ai.article_id = a.id
      WHERE ai.error = 'content_filter'
+       AND (? = 0 OR a.posted_at IS NULL OR a.posted_at < ?)
      ORDER BY a.net_count DESC
      LIMIT ?`,
+    minAgeSecs,
+    nowSecs() - minAgeSecs,
     limit,
   );
 }

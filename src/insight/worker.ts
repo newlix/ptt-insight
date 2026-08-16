@@ -42,6 +42,7 @@ export interface WorkerOptions {
   model: string;
   batch: number;
   minNet: number;
+  minAgeSecs: number; // skip articles posted within this window (0 = analyze all; pre-launch churn guard)
   intervalSecs: number; // 0 = continuous
   offPeak: boolean;
   fallback?: LLMClient;
@@ -58,7 +59,7 @@ export class InsightWorker {
       ? "off-peak (skip Mon-Fri 14:00-18:00 UTC+8, 50% credit)"
       : "continuous (24h)";
     console.log(
-      `insight worker started (model=${this.opts.model} batch=${this.opts.batch} concurrency=${this.opts.concurrency ?? 3} min_net=${this.opts.minNet} mode=${mode} fallback=${this.opts.fallbackModel ?? "none"} schema_ver=2)`,
+      `insight worker started (model=${this.opts.model} batch=${this.opts.batch} concurrency=${this.opts.concurrency ?? 3} min_net=${this.opts.minNet} min_age=${Math.round(this.opts.minAgeSecs / 86400)}d mode=${mode} fallback=${this.opts.fallbackModel ?? "none"} schema_ver=2)`,
     );
 
     // Fallback loop: retry content-filtered articles with the fallback
@@ -84,7 +85,7 @@ export class InsightWorker {
       if (signal.aborted) return;
       let articles: PendingArticle[];
       try {
-        articles = claimFilteredArticles(this.opts.db, this.opts.batch);
+        articles = claimFilteredArticles(this.opts.db, this.opts.batch, this.opts.minAgeSecs);
       } catch (e) {
         console.error("claim filtered articles:", e);
         if (!(await sleep(60, signal))) return;
@@ -168,7 +169,7 @@ export class InsightWorker {
   // Returns total processed; 0 = nothing to do (caller sleeps).
   private async processBatch(signal: AbortSignal): Promise<number> {
     const fresh = await this.processClaim(signal, "new", (limit) =>
-      claimPendingArticles(this.opts.db, limit, this.opts.minNet),
+      claimPendingArticles(this.opts.db, limit, this.opts.minNet, this.opts.minAgeSecs),
     );
     const stale = this.opts.refreshDays > 0
       ? await this.processClaim(signal, "reanalyze", (limit) =>
