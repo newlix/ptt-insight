@@ -12,6 +12,18 @@ import {
   type InsightResult,
 } from "../src/repo/insights.ts";
 
+// v2 defaults shared by storeInsight literals in these tests
+const v2Defaults = {
+  articleType: "其他",
+  entities: [] as { name: string; type: string }[],
+  adLikelihood: "無",
+  factuality: "觀點",
+  aiGenerated: "不確定",
+  pushStance: { pro: 0, con: 0, neutral: 0 },
+  pushFacts: "",
+  qaSummary: "",
+};
+
 // Fresh DB with the full merged schema (0001 crawler + 0002 insights).
 function seedDB() {
   const db = openMemoryDB();
@@ -52,6 +64,7 @@ test("repo roundtrip: pending claim → store → stats", () => {
   void del;
 
   const result: InsightResult = {
+    ...v2Defaults,
     articleId: hot,
     tldr: "摘要",
     communityTake: "推文一致叫好",
@@ -105,7 +118,7 @@ test("markInsightError + filtered reclaim + fallback store", () => {
   expect(filtered.map((f) => f.id)).toEqual([id]);
 
   // fallback re-analysis overwrites the error row
-  storeInsight(db, {
+  storeInsight(db, { ...v2Defaults,
     articleId: id, tldr: "ok now", communityTake: "", topComments: "",
     sentiment: "中立", controversy: "低", tags: [], model: "fallback",
     promptTokens: 1, completionTokens: 1,
@@ -122,7 +135,7 @@ test("claimStaleArticles: re-analyze when data changed, only fresh articles, hou
   const mk = (urlId: string, postedAt: number) => {
     const id = insertArticle(db, urlId, "x".repeat(50), 99);
     db.prepare(`UPDATE articles SET posted_at = ? WHERE id = ?`).run(postedAt, id);
-    storeInsight(db, {
+    storeInsight(db, { ...v2Defaults,
       articleId: id, tldr: "v1", communityTake: "", topComments: "",
       sentiment: "中立", controversy: "低", tags: [], model: "m",
       promptTokens: 1, completionTokens: 1,
@@ -158,7 +171,7 @@ test("claimStaleArticles: re-analyze when data changed, only fresh articles, hou
   expect(claimed.map((p) => p.id)).toEqual([stale]);
 
   // after re-analysis succeeds, generated_at moves past last_fetched_at → gone
-  storeInsight(db, {
+  storeInsight(db, { ...v2Defaults,
     articleId: stale, tldr: "v2", communityTake: "", topComments: "",
     sentiment: "中立", controversy: "低", tags: [], model: "m",
     promptTokens: 1, completionTokens: 1,
@@ -185,7 +198,7 @@ test("transient insight errors retry after cooldown; fresh ones don't", () => {
   expect(claimed.map((p) => p.id)).toEqual([a1]);
 
   // a successful store during retry clears the error permanently
-  storeInsight(db, {
+  storeInsight(db, { ...v2Defaults,
     articleId: a1, tldr: "recovered", communityTake: "", topComments: "",
     sentiment: "中立", controversy: "低", tags: [], model: "m",
     promptTokens: 1, completionTokens: 1,

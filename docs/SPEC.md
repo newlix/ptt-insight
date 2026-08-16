@@ -383,3 +383,46 @@ c=6 → 0 429、~249/hr（baseline 146/hr 的 1.7×）。Max plan 的約束是 R
 離峰 ×0.5；Max 週額度 140,000。c=6 滿載 302/hr ≈ 204K/週會撞頂（~4.8 天），
 撞頂後 error row 1h cooldown 滾雪球。目標 c=4 ≈ 201/hr ≈ 136K/週（3% 餘裕）。
 acceptance: `test $(sudo grep -c '^WORKER_CONCURRENCY=4$' /etc/ptt-insight.env) -eq 1 && journalctl -u ptt-insight --no-pager | grep -q 'batch=20 concurrency=4' && systemctl is-active --quiet ptt-insight`
+
+# 任務 9 — Insight v2 全功能 + 聚合層（2026-08-16，使用者指示「全部」）
+
+## 範圍（13 功能 → 10 卡）
+A 文章層：實體抽取、文章類型、業配偵測、事實性、AI 生成偵測
+B 推文層：推噓立場分佈、推文增量情報、問卦答案摘要
+C 聚合層：板級日報、實體情緒時序、事件群聚、爆文預測
+D 獨家：被刪爆文摘要
+
+## 設計
+- **schema v2**（migration 0004，`ALTER TABLE article_insights ADD`）：
+  `schema_ver INT DEFAULT 1`、`article_type TEXT`（新聞|問卦|心得|爆掛|閒聊|其他）、
+  `entities TEXT DEFAULT '[]'`（JSON [{name,type}]，≤8）、
+  `ad_likelihood TEXT`（無|疑似|高度）、`factuality TEXT`（事實|觀點|未證實）、
+  `ai_generated TEXT`（人寫|不確定|疑似AI）、
+  `push_stance TEXT`（JSON {pro,con,neutral} 0-100）、
+  `push_facts TEXT`、`qa_summary TEXT`（僅問卦類非空）。
+- **重分析觸發**：`claimPendingArticles` 加 `OR ai.schema_ver < 2` → 舊 3,587 筆 v1
+  insight 全部回流重算（net_count DESC 順序），backlog 38K 新文直接拿 v2。
+- **prompt v2**：輸出 JSON 加 8 欄，指示精簡（entities ≤8、每欄限長）；
+  預估 output 1.5K→~2.4K tokens → 每筆離峰 ~4.0→~5.3 credits（+32%）`[inferred，9.4 實測]`。
+- **成本預算**：滿載 c=4 估 ~170-200/hr（latency +15-20%），週燒 ~125-135K < 140K 上限
+  `[inferred，9.5 實測後校正]`；v1→v2 重算 3.6K 筆 ≈ 19K credits 一次性。
+- **views**：AI 區塊加類型徽章、實體 chips、立場分佈、推文情報、問卦答案；
+  維持 PTT-clone 素材風格（沿用 ai-label/ai-meta 慣例）。
+- 卡 9.1-9.3 共享 InsightResult 型別骨幹 → 依序 inline 執行（宣告：偏離 fresh-context
+  delegate 慣例，理由=同型別三處改動，拆 delegate 反增衝突風險）；9.6+ 為獨立子系統可 delegate。
+
+### 卡 9.1 — migration 0004 + repo v2（schema_ver claim）+ 測試
+acceptance: `cd /home/newlix/github/newlix/ptt-insight && bun test 2>&1 | grep -q ' 0 fail' && bunx tsc --noEmit && rg -q 'schema_ver' src/repo/insights.ts src/db/migrations/0004_insight_v2.sql`
+### 卡 9.2 — analyze.ts prompt v2 + parse v2 + 測試
+acceptance: `cd /home/newlix/github/newlix/ptt-insight && bun test 2>&1 | grep -q ' 0 fail' && bunx tsc --noEmit && rg -q 'push_stance' src/insight/analyze.ts`
+### 卡 9.3 — article 頁 AI 區塊 v2 欄位 + 測試
+acceptance: `cd /home/newlix/github/newlix/ptt-insight && bun test 2>&1 | grep -q ' 0 fail' && bunx tsc --noEmit && rg -q 'qa_summary\|qaSummary' src/views/article.ts`
+### 卡 9.4 — E2E 真實 LLM：v2 欄位齊全 + tokens/latency 對比 v1
+acceptance: temp DB 跑 ≥5 篇真文章 → 每篇 schema_ver=2 且 8 新欄位非空（qa_summary 僅問卦）+ 記錄 tokens/latency
+### 卡 9.5 — 部署 + 15min 監控（速率/credit/品質抽查）
+acceptance: `systemctl is-active --quiet ptt-insight && journalctl -u ptt-insight --no-pager | grep -q 'schema_ver=2'`（啟動行加版號）+ 速率/0 限流實測記錄
+### 卡 9.6 — 板級日報（job + 首頁區塊）
+### 卡 9.7 — 被刪爆文日報
+### 卡 9.8 — 實體搜尋 + 情緒時序
+### 卡 9.9 — 事件群聚
+### 卡 9.10 — 爆文預測（統計特徵為主，少量 LLM）

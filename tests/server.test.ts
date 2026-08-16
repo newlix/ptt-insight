@@ -101,6 +101,32 @@ test("GET /bbs/{board}/{url_id}.html renders article with pushes", async () => {
   expect(body).toContain(": good");
 });
 
+test("GET /bbs/{board}/{url_id}.html renders insight v2 fields", async () => {
+  const aid = (db.prepare(`SELECT id FROM articles WHERE url_id = 'M.1001.A.A1'`).get() as { id: number }).id;
+  db.prepare(
+    `INSERT INTO article_insights
+       (article_id, tldr, community_take, top_comments, sentiment, controversy, tags, model, prompt_tokens, completion_tokens,
+        schema_ver, article_type, entities, ad_likelihood, factuality, ai_generated, push_stance, push_facts, qa_summary)
+     VALUES (?, '摘要v2', '推文叫好', '', '正面', '低', '[]', 'glm-5.2', 1, 1,
+        2, '問卦', ?, '高度', '未證實', '人寫', ?, '推文爆料原文作者領錢辦事', '鄉民：要等七月')`,
+  ).run(aid, JSON.stringify([{ name: "FGO", type: "遊戲" }]), JSON.stringify({ pro: 60, con: 30, neutral: 10 }));
+
+  const resp = await GET("/bbs/TestBoard/M.1001.A.A1.html");
+  const body = await resp.text();
+  expect(body).toContain("類型 <span>[問卦]</span>");
+  expect(body).toContain("FGO"); // entity chip
+  expect(body).toContain("業配 <span class=\"c-f1\">[高度]</span>");
+  expect(body).toContain("事實 <span>[未證實]</span>");
+  expect(body).toContain("鄉民回答"); // qa_summary
+  expect(body).toContain("推文情報"); // push_facts
+  expect(body).toContain("推 <span class=\"c-f3\">60%</span>"); // stance
+  // legacy/no-value badges stay hidden
+  expect(body).not.toContain("[人寫]");
+
+  // shared seeded db — remove the insight row so /healthz counts stay pristine
+  db.prepare(`DELETE FROM article_insights WHERE article_id = ?`).run(aid);
+});
+
 test("GET /b/{board} renders board, unknown board → not-collected page", async () => {
   const ok = await GET("/b/TestBoard");
   expect(ok.status).toBe(200);

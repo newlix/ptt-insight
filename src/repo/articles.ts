@@ -41,6 +41,15 @@ export interface ArticleDetail extends ArticleCard {
   model: string | null;
   insightGeneratedAt: number | null;
   pushes: Push[];
+  // insight v2 fields (schema_ver=2; null on legacy rows)
+  articleType: string | null;
+  entities: { name: string; type: string }[];
+  adLikelihood: string | null;
+  factuality: string | null;
+  aiGenerated: string | null;
+  pushStance: { pro: number; con: number; neutral: number } | null;
+  pushFacts: string | null;
+  qaSummary: string | null;
 }
 
 export interface Board {
@@ -116,6 +125,30 @@ export function parseTags(raw: string | null): string[] {
   }
 }
 
+export function parseEntities(raw: string | null): { name: string; type: string }[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v)
+      ? v.filter((e): e is { name: string; type: string } =>
+          typeof e === "object" && e !== null && typeof (e as { name?: unknown }).name === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function parseStance(raw: string | null): { pro: number; con: number; neutral: number } | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw) as { pro?: unknown; con?: unknown; neutral?: unknown };
+    const n = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : 0);
+    return { pro: n(v.pro), con: n(v.con), neutral: n(v.neutral) };
+  } catch {
+    return null;
+  }
+}
+
 function cardQueryBody(where: string, order: string): string {
   return `SELECT ${CARD_COLS}, ${INSIGHT_COLS}
     FROM articles a JOIN boards b ON b.id = a.board_id
@@ -138,13 +171,22 @@ interface DetailRow extends CardRow {
   key_points: string | null;
   top_comments: string | null;
   model: string | null;
+  article_type: string | null;
+  entities: string | null;
+  ad_likelihood: string | null;
+  factuality: string | null;
+  ai_generated: string | null;
+  push_stance: string | null;
+  push_facts: string | null;
+  qa_summary: string | null;
   insight_generated_at: number | null;
 }
 
 function getArticleWhere(db: DB, where: string, ...params: (string | number)[]): ArticleDetail | null {
   const row = db
     .prepare(
-      `SELECT ${CARD_COLS}, ${INSIGHT_COLS}, a.content, a.ip, ai.key_points, ai.top_comments, ai.model, ai.generated_at AS insight_generated_at
+      `SELECT ${CARD_COLS}, ${INSIGHT_COLS}, a.content, a.ip, ai.key_points, ai.top_comments, ai.model, ai.generated_at AS insight_generated_at,
+              ai.article_type, ai.entities, ai.ad_likelihood, ai.factuality, ai.ai_generated, ai.push_stance, ai.push_facts, ai.qa_summary
        FROM articles a JOIN boards b ON b.id = a.board_id
        LEFT JOIN article_insights ai ON ai.article_id = a.id
        WHERE ${where}`,
@@ -164,6 +206,14 @@ function getArticleWhere(db: DB, where: string, ...params: (string | number)[]):
     topComments: row.top_comments,
     model: row.model,
     insightGeneratedAt: row.insight_generated_at,
+    articleType: row.article_type,
+    entities: parseEntities(row.entities),
+    adLikelihood: row.ad_likelihood,
+    factuality: row.factuality,
+    aiGenerated: row.ai_generated,
+    pushStance: parseStance(row.push_stance),
+    pushFacts: row.push_facts,
+    qaSummary: row.qa_summary,
     pushes: pushes.map((p) => ({
       seq: p.seq,
       tag: p.tag,

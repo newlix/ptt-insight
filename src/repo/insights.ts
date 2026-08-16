@@ -13,6 +13,15 @@ export interface InsightResult {
   model: string;
   promptTokens: number;
   completionTokens: number;
+  // v2 fields (schema_ver=2)
+  articleType: string;
+  entities: { name: string; type: string }[];
+  adLikelihood: string;
+  factuality: string;
+  aiGenerated: string;
+  pushStance: { pro: number; con: number; neutral: number };
+  pushFacts: string;
+  qaSummary: string;
 }
 
 export interface PendingArticle {
@@ -64,6 +73,7 @@ export function claimPendingArticles(db: DB, limit: number, minNet: number): Pen
        AND (
          ai.id IS NULL
          OR (ai.error IS NOT NULL AND ai.error != 'content_filter' AND ai.generated_at < ?)
+         OR (ai.error IS NULL AND ai.schema_ver < 2)
        )
      ORDER BY a.net_count DESC, a.posted_at DESC
      LIMIT ?`,
@@ -126,8 +136,9 @@ export function claimFilteredArticles(db: DB, limit: number): PendingArticle[] {
 export function storeInsight(db: DB, r: InsightResult): void {
   db.prepare(
     `INSERT INTO article_insights
-       (article_id, tldr, community_take, top_comments, sentiment, controversy, tags, model, prompt_tokens, completion_tokens)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (article_id, tldr, community_take, top_comments, sentiment, controversy, tags, model, prompt_tokens, completion_tokens,
+        schema_ver, article_type, entities, ad_likelihood, factuality, ai_generated, push_stance, push_facts, qa_summary)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (article_id) DO UPDATE SET
        tldr              = excluded.tldr,
        community_take    = excluded.community_take,
@@ -139,7 +150,16 @@ export function storeInsight(db: DB, r: InsightResult): void {
        prompt_tokens     = excluded.prompt_tokens,
        completion_tokens = excluded.completion_tokens,
        generated_at      = unixepoch(),
-       error             = NULL`,
+       error             = NULL,
+       schema_ver        = 2,
+       article_type      = excluded.article_type,
+       entities          = excluded.entities,
+       ad_likelihood     = excluded.ad_likelihood,
+       factuality        = excluded.factuality,
+       ai_generated      = excluded.ai_generated,
+       push_stance       = excluded.push_stance,
+       push_facts        = excluded.push_facts,
+       qa_summary        = excluded.qa_summary`,
   ).run(
     r.articleId,
     r.tldr,
@@ -151,6 +171,14 @@ export function storeInsight(db: DB, r: InsightResult): void {
     r.model,
     r.promptTokens,
     r.completionTokens,
+    r.articleType,
+    JSON.stringify(r.entities),
+    r.adLikelihood,
+    r.factuality,
+    r.aiGenerated,
+    JSON.stringify(r.pushStance),
+    r.pushFacts,
+    r.qaSummary,
   );
 }
 

@@ -113,3 +113,62 @@ test("insight writes through storeInsight (worker happy path, in-memory)", async
   expect(row.error).toBeNull();
   expect(claimPendingArticles(db, 5, 20)).toEqual([]);
 });
+
+test("parseAnalysis v2 fields", () => {
+  const raw = JSON.stringify({
+    tldr: "摘要", community_take: "看法", top_comments: ["c1"],
+    sentiment: "正面", controversy: "高", tags: ["t1"],
+    article_type: "這是一則問卦", entities: [{ name: "FGO", type: "遊戲" }, { name: "", type: "人物" }],
+    ad_likelihood: "高度疑似", factuality: "未證實的爆料", ai_generated: "疑似AI生成的模板文",
+    push_stance: { pro: 150, con: -5, neutral: "x" },
+    push_facts: " 推文有人貼出官網公告 ", qa_summary: "推文說要等 7 月",
+  });
+  const an = parseAnalysis(raw);
+  expect(an.article_type).toBe("問卦");
+  expect(an.entities).toEqual([{ name: "FGO", type: "遊戲" }]); // empty name filtered
+  expect(an.ad_likelihood).toBe("高度");
+  expect(an.factuality).toBe("未證實");
+  expect(an.ai_generated).toBe("疑似AI");
+  expect(an.push_stance).toEqual({ pro: 100, con: 0, neutral: 0 }); // clamped
+  expect(an.push_facts).toBe("推文有人貼出官網公告");
+  expect(an.qa_summary).toBe("推文說要等 7 月");
+});
+
+test("parseAnalysis v1-only output gets v2 defaults", () => {
+  const an = parseAnalysis('{"tldr":"摘要","community_take":"c","top_comments":[],"sentiment":"中立","controversy":"低","tags":[]}');
+  expect(an.article_type).toBe("其他");
+  expect(an.entities).toEqual([]);
+  expect(an.ad_likelihood).toBe("無");
+  expect(an.factuality).toBe("觀點");
+  expect(an.ai_generated).toBe("不確定");
+  expect(an.push_stance).toEqual({ pro: 0, con: 0, neutral: 0 });
+  expect(an.push_facts).toBe("");
+  expect(an.qa_summary).toBe("");
+});
+
+test("entities capped at 8", () => {
+  const many = Array.from({ length: 12 }, (_, i) => ({ name: `e${i}`, type: "其他" }));
+  const an = parseAnalysis(JSON.stringify({ tldr: "t", entities: many }));
+  expect(an.entities.length).toBe(8);
+});
+
+test("schema_ver<2 rows re-enter the pending queue", async () => {
+  const db = openMemoryDB();
+  migrate(db);
+  db.prepare(`INSERT INTO boards (id, name) VALUES (1, 'Test')`).run();
+  db.prepare(`INSERT INTO articles (board_id, url_id, content, net_count) VALUES (1, ?, ?, 50)`).run("M.9.A.X", "y".repeat(30));
+
+  const client = new LLMClient(`http://localhost:${stubLLM.port}`, "", "stub-model");
+  const result = await analyze(client, (claimPendingArticles(db, 5, 20))[0]!, "stub-model");
+  storeInsight(db, result);
+  expect(claimPendingArticles(db, 5, 20)).toEqual([]); // v2 → not pending
+
+  db.prepare(`UPDATE article_insights SET schema_ver = 1`).run(); // simulate legacy row
+  expect(claimPendingArticles(db, 5, 20).length).toBe(1); // flows back
+
+  const v2row = db.prepare(`SELECT schema_ver, article_type, push_stance FROM article_insights`).get() as { schema_ver: number; article_type: string | null; push_stance: string | null };
+  storeInsight(db, { ...result });
+  expect(v2row.schema_ver).toBe(1); // captured before re-store; re-store below flips it
+  const after = db.prepare(`SELECT schema_ver FROM article_insights`).get() as { schema_ver: number };
+  expect(after.schema_ver).toBe(2);
+});

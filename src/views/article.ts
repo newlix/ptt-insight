@@ -61,11 +61,33 @@ function aiBlock(d: ArticleDetail): string {
     ? ""
     : `${esc(d.model)}${d.insightGeneratedAt !== null ? ` · ${esc(relativeTime(d.insightGeneratedAt))}` : ""}`;
 
+  // v2 fields — badges and lines render only when the value is meaningful
+  const badge = (label: string, v: string | null, skip: string[] = ["", "無", "其他", "不確定", "人寫", "觀點"], cls = "") =>
+    v !== null && !skip.includes(v)
+      ? `<span>${label} <span${cls === "" ? "" : ` class="${cls}"`}>[${esc(v)}]</span></span>`
+      : "";
+  const typeBadge = badge("類型", d.articleType, ["", "其他"]);
+  const adBadge = badge("業配", d.adLikelihood, ["", "無"], "c-f1");
+  const factBadge = badge("事實", d.factuality, ["", "觀點"]);
+  const aiBadge = badge("AI", d.aiGenerated, ["", "人寫", "不確定"], "c-f1");
+  const entities = d.entities.length > 0
+    ? `<div><span class="ai-label">◎ 實體　</span>${d.entities.map((e) => `<span class="c-f3">${esc(e.name)}</span><span class="ai-model">${esc(e.type)}</span>`).join(" ")}</div>`
+    : "";
+  const pushFacts = d.pushFacts !== null && d.pushFacts !== ""
+    ? `<div><span class="ai-label">◎ 推文情報　</span>${esc(d.pushFacts)}</div>`
+    : "";
+  const qa = d.qaSummary !== null && d.qaSummary !== ""
+    ? `<div><span class="ai-label">◎ 鄉民回答　</span>${esc(d.qaSummary)}</div>`
+    : "";
+  const stance = d.pushStance !== null && (d.pushStance.pro + d.pushStance.con + d.pushStance.neutral) > 0
+    ? `<div><span class="ai-label">◎ 推文立場　</span>推 <span class="c-f3">${d.pushStance.pro}%</span> · 噓 <span class="c-f1">${d.pushStance.con}%</span> · 中立 ${d.pushStance.neutral}%</div>`
+    : "";
+
   return `<div class="ai-block">
 <div class="ai-block-title">AI 分析</div>
 <div class="ai-block-body">
-${tldr}${community}${topComments}
-<div class="ai-meta">${sentiment}${controversy}${tags}<span class="ai-meta-grow"></span><span class="ai-model">${modelLabel}</span></div>
+${tldr}${community}${qa}${topComments}${pushFacts}${entities}${stance}
+<div class="ai-meta">${typeBadge}${sentiment}${controversy}${factBadge}${adBadge}${aiBadge}${tags}<span class="ai-meta-grow"></span><span class="ai-model">${modelLabel}</span></div>
 </div>
 </div>`;
 }

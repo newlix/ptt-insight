@@ -58,7 +58,7 @@ export class InsightWorker {
       ? "off-peak (skip Mon-Fri 14:00-18:00 UTC+8, 50% credit)"
       : "continuous (24h)";
     console.log(
-      `insight worker started (model=${this.opts.model} batch=${this.opts.batch} concurrency=${this.opts.concurrency ?? 3} min_net=${this.opts.minNet} mode=${mode} fallback=${this.opts.fallbackModel ?? "none"})`,
+      `insight worker started (model=${this.opts.model} batch=${this.opts.batch} concurrency=${this.opts.concurrency ?? 3} min_net=${this.opts.minNet} mode=${mode} fallback=${this.opts.fallbackModel ?? "none"} schema_ver=2)`,
     );
 
     // Fallback loop: retry content-filtered articles with the fallback
