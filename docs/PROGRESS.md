@@ -241,3 +241,13 @@ curl 三頁型取渲染輸出，與官方基準逐項比對（結構/class/顏�
 - parseFloat 對 "0px Xpx" shorthand 回 0 — 斷言要用單邊屬性（paddingRight）或 split。
 - 群組選擇器 selectorText 是整串 — CSSOM 查表要 contains，不能精確鍵。
 - 背景 refuter 任務要給「只查差異、立刻輸出 verdict」的緊範圍，否則會燒滿自己的 turn 上限。
+
+# 任務 8 — Insight worker 量能擴充（2026-08-16）
+
+- 起點：c=3/batch=10 ≈ 146 insights/hr，積壓 38,393 筆（net≥20）≈ 11 天。
+- 階梯實測（coding plan 端點 `api.z.ai/api/coding/paas/v4`，glm-5.2）：
+  c=12 → 5 分鐘 16 次 `429 code=1302`；c=8 → 7 分鐘 3 次；c=6 → **零限流**。
+- 定案 c=6/batch=30 ≈ 249/hr（1.7×），~6.4 天清完積壓。
+- 教訓：Max coding plan 的實際約束是**請求頻率/併發上限（穩態 ≈6），不是 token quota**；
+  「方案可負擔」≠「端點不限流」。429 進 1h cooldown 的錯誤矩陣會把被限流文章鎖一小時，
+  寧可低半級跑乾淨。

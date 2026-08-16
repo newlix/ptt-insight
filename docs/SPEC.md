@@ -353,3 +353,27 @@ legacy light /boards 主題不動。產品功能零變更（僅視覺/結構）�
   designverify 四處寬鬆下界改區間帶。
 - 第二輪（聚焦四修）VERDICT: PASS — 含桌面 ≥800 無伸展外漏的獨立 computed probe、
   逐帶可證偽性確認。
+
+# 任務 8 — Insight worker 量能擴充（2026-08-16）
+
+## 緣起
+使用者 Z.AI coding plan 為 Max 級，現行 `WORKER_CONCURRENCY=3`/`WORKER_BATCH=10`
+僅 ~146 insights/小時，佇列積壓 38,393 筆（net≥20），需 ~11 天消化。
+目標：提升 LLM 併發至 12、批次 60，預期 ≥4× 量能（~550-600/hr），3 天內清完積壓。
+
+## 設計 `[measured]`
+- 瓶頸實證：`processClaim` 用 `mapLimit(articles, concurrency)`，env 直通
+  （index.ts:180-185、worker.ts:194-207）→ 純 `/etc/ptt-insight.env` 變更，零程式碼。
+- `WORKER_CONCURRENCY=3→12`：Max plan 併發餘裕（使用者聲明）；CLAUDE.md 警告
+  過高觸發 429/1302 → 部署後觀察 10 分鐘，若出現 429/1302 降 8。
+- `WORKER_BATCH=10→60`：= concurrency×5，讓 mapLimit 持續飽和。
+- `WORKER_OFFPEAK=1` 維持：coding plan 離峰用量半價，平日 14-18 暫停只佔
+  一週 17%，積壓天數尺度下省 50% quota 划算 `[inferred]`。
+- 不動 `WORKER_MIN_NET`（產品範圍，非量能）。
+
+### 卡 8.1 — env 擴充 + 部署 + 量能實證
+acceptance: `test $(sudo grep -c '^WORKER_CONCURRENCY=6$' /etc/ptt-insight.env) -eq 1 && journalctl -u ptt-insight --no-pager | grep -q 'batch=30 concurrency=6' && systemctl is-active --quiet ptt-insight`
+
+量能階梯（實測 2026-08-16 17:04-17:25）：c=12 → 16×429/5min 重度限流；c=8 → 3×429/7min 偶發；
+c=6 → 0 429、~249/hr（baseline 146/hr 的 1.7×）。Max plan 的約束是 RPM/併發上限（~6 穩態），
+不是 token quota。
