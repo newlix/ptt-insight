@@ -19,8 +19,8 @@ export function pttLayout(title: string, board: string, children: string): strin
 <div class="ptt-topbar"><div class="ptt-topbar-inner">
 <a href="/" class="topbar-home">批踢踢實業坊</a>
 ${boardCrumb}
-<a href="https://www.ptt.cc/contact.html" class="topbar-link topbar-right">聯絡資訊</a>
 <a href="https://www.ptt.cc/about.html" class="topbar-link topbar-right">關於我們</a>
+<a href="https://www.ptt.cc/contact.html" class="topbar-link topbar-right">聯絡資訊</a>
 </div></div>
 ${children}
 </body>
@@ -28,17 +28,17 @@ ${children}
 }
 
 function hotBoardsActionBar(): string {
-  return `<div class="ptt-container ptt-pt40">
-<div class="actionbar">
+  return `<div class="ptt-actionbar-container"><div class="ptt-actionbar">
+<div class="btn-group btn-group-cls">
 <a href="/" class="ab-btn ab-active">熱門看板</a><a href="https://www.ptt.cc/cls/1" class="ab-btn">分類看板</a>
 </div>
-</div>`;
+</div></div>`;
 }
 
 export function hotBoardsPage(boards: HotBoard[]): string {
   const rows = boards.map(hotBoardRow).join("");
   return pttLayout("熱門看板 - 批踢踢實業坊", "", `${hotBoardsActionBar()}
-<div class="ptt-container ptt-pt10">${rows}</div>`);
+<div class="ptt-container ptt-actionbar-margin ptt-pt10">${rows}</div>`);
 }
 
 function hotBoardRow(b: HotBoard): string {
@@ -55,7 +55,7 @@ export function boardNotCollectedPage(name: string): string {
     `看板 ${name} - 批踢踢實業坊`,
     name,
     `${hotBoardsActionBar()}
-<div class="ptt-container ptt-pt40 ptt-px2">
+<div class="ptt-container ptt-actionbar-margin ptt-pt10 ptt-px2">
 <div class="notcollected-title">此看板尚未收錄：${esc(name)}</div>
 <div class="notcollected-back"><a href="/">‹ 返回熱門看板</a></div>
 </div>`,

@@ -97,7 +97,7 @@ test("GET /bbs/{board}/{url_id}.html renders article with pushes", async () => {
   expect(body).toContain("[公告] pinned post");
   expect(body).toContain("article-meta-tag");
   expect(body).toContain("push-line");
-  expect(body).toContain(">u1<");
+  expect(body).toContain(`>${"u1".padEnd(12)}<`);
   expect(body).toContain(": good");
 });
 

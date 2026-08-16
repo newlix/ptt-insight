@@ -62,3 +62,60 @@ CLAUDE.md：測試數、檔案結構（刪 nrec.ts 行）、insightStats minNet 
 - 每卡：`bun test` + `bunx tsc --noEmit`（machine-checkable）。
 - Milestone：`refuter` recipe 訛證（餵本 SPEC 節錄）。
 - 實機驗證：暫存 DB + `RUN_CRAWLER=0 RUN_WORKER=0` 起 web，curl `/healthz` 與首頁比對預期輸出。
+
+---
+
+# 任務 3 — 設計差異全修（2026-08-16）
+
+## 緣起
+
+使用者指示 "fix all"。原審計差異清單（D1–D13）僅存於對話未落地，故本 SPEC 以官方基準
+（/tmp/ptt_bbs-{common,base,custom}.css v2.27 + /tmp/ptt_{index,board,article}.html，
+皆本機可驗證）重新推導差異並全數列修。範圍：PTT clone 主題（.ptt-body 族）；
+legacy light /boards 主題不動。產品功能零變更（僅視覺/結構）。
+
+## 差異清單（重推導；官方值 ← clone 現值）
+
+中（3）：
+- F1 action bar 非 fixed：官方 `#action-bar-container{position:fixed;top:0;padding:40px 0 0 0;background:#000;z-index:98}` + 內容 `action-bar-margin{margin-top:40px}`。clone 為 static。
+- F2 斷點 640→800：官方 desktop `@media(min-width:800px)` / mobile `max-width:799px`。僅 PTT 主題改；light 主題 640/768/1024 不動。
+- F3 看板 metaline `top:40px`→`0`（官方 `.article-metaline-right{top:0}`，與作者行同高）。
+
+小（重推導，全修）：
+- F4 標題連結 hover：官方全局 `a:hover{background:#ccc;color:#333}`、`a:visited{#888}`（`.r-list .title a` 規則因官方 HTML 無 .r-list 祖先而不生效 → 標題色 #aaa 已正確）。clone hover bg#aaa/color#999 → 改 bg#ccc/color#333，補 :visited #888。
+- F5 Inconsolata：官方 base.css @import 該字型且 `.r-ent .author/.mark` 用 `Inconsolata,serif|sans-serif`。clone 未載字型、author 僅 serif、mark 無字型。
+- F6 topbar：右側連結 DOM 順序（官方 關於我們 在前=float right 後最右）、padding 0 5px（logo 0 10px）、desktop 字級 24px（#topbar.bbs-content）、右鏈/label `font-size:small`、z-index 99、`> *`（含 › span）inline-block/line-height 40px。
+- F7 文章行高：官方 `.bbs-screen{line-height:100%}` → clone 1.2/24px 改 1。
+- F8 r-ent 版模：官方 float 模型 — nrec `width:4ex;float:left;font-family:serif;padding:.5ex 0 0 0`、title/meta display:block、mobile `margin-left:5ex;margin-right:2ex`、desktop `margin:1ex 0;padding:.5ex 0;background:#111` + title `margin:0 5ex` meta `margin-left:5ex`、`> *{font-size:20px}`、date `min-width:6ex`+serif、mark `width:2ex`+bold+Inconsolata、meta 子項 padding .5ex 0、mark/date `float:right;margin-left:5px`。clone grid 37px/1fr/46px + padding-left 9px → 改官方模型（HTML 去 r-title-container 包裹與空第三欄，nrec/title/meta 為 r-ent 直接子元素）。author 去 flex/ellipsis（PTT id ≤12 字，信任內部資料）。
+- F9 按鈕：mobile `padding:0 1ex;font-size:small`、desktop `0 2ex;font-size:initial`、wide 僅 desktop `0 3ex`。toolbar：mobile `text-align:center`、desktop left + `.btn-group-paging{float:right}`（去 flex+gap）。`.btn-group{font-size:0}`、相鄰 btn `margin-left:-1px`。home 加 `.btn-group-cls` 包裹（結構對齊官方）。
+- F10 push：`.push-tag{min-width:3.5ex}`（去 24/38px 兩段式）、`.push-line>span{white-space:pre-wrap}`、view 端 `userId.padEnd(12)`（官方 12 字欄位；parser 已 trim）。
+- F11 r18-notice：官方 over18 樣式 desktop `margin:20px` / mobile `padding:0 1ex`，去 text-align:center。內容保留（分級聲明，產品選擇）。
+- F12 r-list-sep：`height:.5ex` 去 margin。
+- F13 文章底栏加 `.bar` 分隔（4px #888）。
+- F14 metaline tag/value `padding:0 1ex`（原 0 9px）。
+- F15 移除 article-gap（官方 metaline 後直接接內文）。
+- F16 hotboard：desktop 欄寬改 ex 制（name 20ex/class 6ex/nuser 9ex+`padding-right:1ex`、name `padding-left:1ex`）、mobile class/title `font-size:small`、name `padding:0 1ex`、nuser `padding:.5ex 1ex`。
+- F17 按鈕 :visited 補 `color:#ddd`（官方 .btn:link,.btn:visited）。
+- F18（跳過聲明）官方每列 article-menu（⋯ dropdown）不重製：無搜尋後端，做死 UI 反而違背意圖；記錄為刻意差異。
+
+## 任務卡
+
+### 卡 9 — 套用 F1–F17（app.css + ptt.ts + board.ts + article.ts）
+- 驗收：`bun test` + `bunx tsc --noEmit` 全綠；`rg "min-width: 640" src/server/app.css` 僅剩 light 主題區（PTT 區全 800）；`rg "r-title-container|article-gap" src` 零輸出；curl 渲染輸出含 `btn-group-cls`、push userid 欄位對齊（padEnd 生效）。
+
+### 卡 10 — 實機渲染驗證
+- designcheck 起 seeded server；curl 三頁型結構斷言；playwright 1280/390 截圖與官方並排；computed-style probe：topbar 高 40、action bar fixed(z-index 98)、metaline-right top 0、author 字型 Inconsolata。
+
+### 卡 11 — milestone：refuter 訛證 + commit + push
+- 餵本節錄；PASS 後 commit（單一 commit：design parity fixes）+ push origin/main。
+
+## 里程碑後記（refuter 兩輪）
+
+- 第一輪 FAIL（實質缺陷）：F13 `.bar` 空 inline-block baseline 對齊 → 底栏 54px/分隔條上浮 14px。
+  修法：`.article-bottombar .ptt-container{height:40px}` + 子項 `vertical-align:middle`（官方
+  `#navigation` 同款護欄）。designverify F13 改幾何斷言（nav h=40、bar h=40、Δtop=0）。
+- 同輪補修：F19 mobile toolbar 滿寬伸展（官方 custom.css 33%/66%/50%/25%/100% + nowrap，
+  probe btnW/barW=0.5）；r-mark text-align right（官方 .r-ent .meta .mark 覆蓋）；
+  designverify 四處寬鬆下界改區間帶。
+- 第二輪（聚焦四修）VERDICT: PASS — 含桌面 ≥800 無伸展外漏的獨立 computed probe、
+  逐帶可證偽性確認。

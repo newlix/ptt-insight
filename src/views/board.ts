@@ -26,8 +26,8 @@ export function pttBoardPage(board: Board, articles: ArticleCard[], page: number
   return pttLayout(
     `看板 ${board.name} 文章列表 - 批踢踢實業坊`,
     board.name,
-    `<div class="ptt-container ptt-pt40">
-<div class="board-toolbar">${dirBtns}${pagingBtns}</div>
+    `<div class="ptt-actionbar-container"><div class="ptt-actionbar">${dirBtns}${pagingBtns}</div></div>
+<div class="ptt-container ptt-actionbar-margin">
 <div class="ptt-pt10">
 <div class="search-box"><input type="text" name="q" placeholder="搜尋文章⋯" class="query"/></div>
 ${rows}${pinnedRows}
@@ -39,13 +39,10 @@ ${rows}${pinnedRows}
 
 function rEnt(a: ArticleCard, board: string): string {
   const nrec = a.nrecRaw !== null && a.nrecRaw !== "" ? `<span class="${nrecClass(a.nrecRaw)}">${esc(a.nrecRaw)}</span>` : "";
-  const author = a.author !== null ? `<div class="r-author">${esc(a.author)}</div>` : `<div class="r-author"></div>`;
+  const author = `<div class="r-author">${esc(a.author ?? "")}</div>`;
   return `<div class="r-ent">
 <div class="nrec">${nrec}</div>
-<div class="r-title-container">
 <div class="r-title"><a href="/bbs/${esc(board)}/${esc(a.urlId)}.html">${esc(a.title)}</a></div>
 <div class="r-meta">${author}<div class="r-date">${esc(pttDate(a.postedAt))}</div><div class="r-mark">${esc(a.mark ?? "")}</div></div>
-</div>
-<div></div>
 </div>`;
 }
