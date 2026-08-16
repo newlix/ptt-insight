@@ -221,18 +221,34 @@ test("GET /trends and /rising render", async () => {
 test("GET /u/:author lists hot-board articles by author", async () => {
   // seeded articles use author1 (board TestBoard, hot only when set below)
   db.prepare(`UPDATE boards SET is_hot = 1 WHERE id = 1`).run();
+  // seed one push by author1 on the first seeded article
+  const aid = (db.prepare(`SELECT id FROM articles WHERE url_id = 'M.1001.A.A1'`).get() as { id: number }).id;
+  db.prepare(`INSERT INTO pushes (article_id, seq, tag, user_id, content) VALUES (?, 90, '推', 'author1', '測試推文內容')`).run(aid);
+  db.prepare(`INSERT INTO pushes (article_id, seq, tag, user_id, content) VALUES (?, 91, '噓', 'author1', '測試噓文')`).run(aid);
+
   const page = await GET("/u/author1");
   expect(page.status).toBe(200);
   const body = await page.text();
   expect(body).toContain("user-page");
   expect(body).toContain("TestBoard");
   expect(body).toContain("article 1");
+  expect(body).toContain("push-footprint");
+  expect(body).toContain("測試推文內容");
+  expect(body).toContain("推 1 · 噓 1");
+
+  // push-only user gets a page (no posts)
+  const pushOnly = await GET("/u/pusher1");
+  expect(pushOnly.status).toBe(404); // no pushes either
+  db.prepare(`INSERT INTO pushes (article_id, seq, tag, user_id, content) VALUES (?, 95, '推', 'pusher1', '只推不發文')`).run(aid);
+  const pushOnly2 = await GET("/u/pusher1");
+  expect(pushOnly2.status).toBe(200);
+  expect(await pushOnly2.text()).toContain("只推不發文");
 
   const none = await GET("/u/nobody123");
   expect(none.status).toBe(404);
+  db.prepare(`DELETE FROM pushes WHERE user_id IN ('author1', 'pusher1')`).run();
   db.prepare(`UPDATE boards SET is_hot = 0 WHERE id = 1`).run();
 });
-
 test("article page author links to /u/:author", async () => {
   const page = await GET("/bbs/TestBoard/M.1001.A.A1.html");
   const body = await page.text();

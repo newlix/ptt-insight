@@ -17,6 +17,7 @@ import { listDigests } from "../repo/digests.ts";
 import { trendsPage, risingPage } from "../views/trends.ts";
 import { trendingEntities, risingArticles, velocityCalibration } from "../repo/trends.ts";
 import { listArticlesByAuthor, authorStats } from "../repo/authors.ts";
+import { listPushesByUser, pushStats } from "../repo/authors.ts";
 import { userPage } from "../views/user.ts";
 import { searchEntities, entityTimeline, entityArticles } from "../repo/entities.ts";
 import { boardsListPage } from "../views/pages.ts";
@@ -109,10 +110,12 @@ export function createServer(opts: ServerOptions) {
       if (user) {
         const author = safeDecode(user[1]!);
         const stats = authorStats(opts.db, author);
-        if (stats.total === 0) return html(userPage(author, stats, []), 404);
-        return html(userPage(author, stats, listArticlesByAuthor(opts.db, author, 50)));
-      }
-      const ent = path.match(/^\/e\/([^/]+)$/);
+        const pstats = pushStats(opts.db, author);
+        if (stats.total === 0 && pstats.total === 0) return html(userPage(author, stats, [], pstats, []), 404);
+        return html(
+          userPage(author, stats, listArticlesByAuthor(opts.db, author, 50), pstats, listPushesByUser(opts.db, author, 50)),
+        );
+      }      const ent = path.match(/^\/e\/([^/]+)$/);
       if (ent) {
         const raw = safeDecode(ent[1]!);
         const hits = searchEntities(opts.db, raw, 1);

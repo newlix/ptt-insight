@@ -54,3 +54,68 @@ export function authorStats(db: DB, author: string): { boards: number; total: nu
     .get(author) as { boards: number; total: number; net_sum: number };
   return { boards: r.boards, total: r.total, netSum: r.net_sum };
 }
+
+export interface UserPush {
+  articleId: number;
+  boardName: string;
+  urlId: string;
+  articleTitle: string;
+  postedAt: number | null;
+  tag: string;
+  content: string | null;
+  articleNet: number;
+}
+
+// Latest pushes by this ID across hot boards. Recency = the pushed article's
+// posted_at (pushes themselves carry no reliable year in ipdatetime).
+export function listPushesByUser(db: DB, user: string, limit = 50): UserPush[] {
+  const rows = db
+    .prepare(
+      `SELECT p.article_id, b.name AS board, a.url_id, COALESCE(a.title, '(無標題)') AS title,
+              a.posted_at, p.tag, p.content, a.net_count
+       FROM pushes p
+       JOIN articles a ON a.id = p.article_id AND a.deleted_at IS NULL
+       JOIN boards b ON b.id = a.board_id AND b.is_hot = 1
+       WHERE p.user_id = ?
+       ORDER BY a.posted_at DESC, p.article_id DESC, p.seq DESC
+       LIMIT ?`,
+    )
+    .all(user, limit) as {
+    article_id: number; board: string; url_id: string; title: string; posted_at: number | null;
+    tag: string; content: string | null; net_count: number;
+  }[];
+  return rows.map((r) => ({
+    articleId: r.article_id,
+    boardName: r.board,
+    urlId: r.url_id,
+    articleTitle: r.title,
+    postedAt: r.posted_at,
+    tag: r.tag,
+    content: r.content,
+    articleNet: r.net_count,
+  }));
+}
+
+export interface PushStats {
+  total: number;
+  boards: number;
+  pushCount: number;
+  booCount: number;
+  arrowCount: number;
+}
+
+export function pushStats(db: DB, user: string): PushStats {
+  const r = db
+    .prepare(
+      `SELECT COUNT(*) AS total, COUNT(DISTINCT a.board_id) AS boards,
+              SUM(CASE WHEN p.tag = '推' THEN 1 ELSE 0 END) AS "pushCount",
+              SUM(CASE WHEN p.tag = '噓' THEN 1 ELSE 0 END) AS "booCount",
+              SUM(CASE WHEN p.tag = '→' THEN 1 ELSE 0 END) AS "arrowCount"
+       FROM pushes p
+       JOIN articles a ON a.id = p.article_id AND a.deleted_at IS NULL
+       JOIN boards b ON b.id = a.board_id AND b.is_hot = 1
+       WHERE p.user_id = ?`,
+    )
+    .get(user) as PushStats | null;
+  return { total: 0, boards: 0, pushCount: 0, booCount: 0, arrowCount: 0, ...(r ?? {}) } as PushStats;
+}
