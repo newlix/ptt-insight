@@ -276,3 +276,13 @@ curl 三頁型取渲染輸出，與官方基準逐項比對（結構/class/顏�
   （`bun scripts/e2e_v2.ts`）close-guard 機械重跑必炸；殘留物（DB 列、產物檔）才是
   可重驗的證據。
 - 待辦（9.6-9.10 deferred）：聚合層五卡。
+
+# 任務 9.8 — 實體搜尋 + 情緒時序（2026-08-16，session 2）
+
+- 9.8a/9.8b/9.8c 完成：`entity_refs` 派生索引（NFKC 正規化 + 別名表）+ `/search` +
+  `/e/:name`（60 天情緒時序 CSS bar、無 JS）+ topbar 全站搜尋框。部署 ea9611a、
+  backfill 764 refs、refuter PASS（XSS/LIKE/壞編碼/中文路由四攻擊面）。
+- 121 tests / 0 fail。熱門實體實測：hololive(29)、兎田ぺこら(13)。
+- 決策記錄：不引入 Postgres（repo 史前就是 PG→SQLite 合併；200 萬列 B-tree/前綴 LIKE
+  足夠；D1 同 SQL 不白做）。真正的難點是別名正規化——`entity_aliases` 已建、查詢路徑
+  已支援展開，等資料量大後手動/半自動養。
