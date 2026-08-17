@@ -1,3 +1,20 @@
+# 任務 10 — Go + PostgreSQL 版本（2026-08-17 起）
+
+背景：TS 版（已完成 18+ 卡）為基準實作。Go 版為長期維護性投資（編譯期保證/單
+binary/生態穩定），行為對等是驗收標準（同 URL 同 HTML 語義同查詢結果）。
+
+- 10.1 scaffold：go.mod + pgx v5 + docker PG(5433) + PG 方言 schema（0001-0008
+  合併移植）+ hand-rolled migrate + /healthz
+- 10.2 資料導入：SQLite→PG 一次性腳本，驗證計數對齊
+- 10.3 repo 層移植：articles/boards/insights/entities/authors/trends/deleted/digests
+- 10.4 web 層：routes + views（esc/layout 對等、快取標頭策略同 9.17）
+- 10.5 crawler：fetcher/雙桶 limiter/backfill 狀態機/incremental/刪文稽核
+- 10.6 insight worker：LLM client、claim/store、schema_ver 回流、fallback loop
+- 10.7 digest loop + pg_dump 備份管道
+- 10.8 parity 測試（兩版同資料同路由 HTML diff）+ 並行部署 + 切換 runbook
+
+原則：PG 常駐只在 docker（開發/測試）；prod 切換前 TS 版持續為真相源。
+
 # 任務 7 — 刪除稽核（deletion audit）：刪後複查 + PTT 端異常警報（2026-08-16）
 
 ## 緣起
