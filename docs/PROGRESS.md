@@ -374,6 +374,10 @@ curl 三頁型取渲染輸出，與官方基準逐項比對（結構/class/顏�
   nrec/vanish 語意）。爬蟲/worker **未 live 跑**（雙跑=重複爬+重複燒 credit），
   切換日按 RUNBOOK-vps.md 驗證。
 - 匯入器 cmd/importfromsqlite：10 表 TRUNCATE+COPY 2m18s、計數對齊、序列重置。
+- **工具鏈教訓（10.9/10.11）**：acceptance 指令裡永遠不要 `pkill -f <模式>`——
+  close-guard 逐字重跑，模式命中自身命令列 = 自殺（exit 143）；工具呼叫逾時的
+  清理會連 setsid 分離的子進程一起殺（cgroup 掃除），長冷啟流程必須拆成
+  多個短工具呼叫。
 
 # 任務 9.21 — 暫時提速收尾 backfill（2026-08-17 08:02）
 
