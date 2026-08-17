@@ -3,7 +3,24 @@
 **全部完成（10.1–10.8，2026-08-17）。** Go+PG 版與 TS+SQLite 版行為對等：
 17/17 路由逐位元組相同（同快照資料、相對時間正規化後 diff 為零）。
 **未切換**：TS 版仍為 prod 真相源；Go 版 live 爬取/LLM 未實跑（避免雙跑重複
-爬 PT 與重複燒 credit），切換 = RUNBOOK 步驟（TS 停 → 匯入 → Go 上 :8088）。
+爬 PT 與重複燒 credit）。切換程序 = **ptt-insight-go `docs/RUNBOOK-switch.md`**
+（TS 停 → 快照匯入 → Go 上 :8088）。
+
+**Port 稽核（2026-08-17 午，修复 session）**：獨立驗證發現 parity harness
+只比 status+body、且 17 checks 未涵蓋 /trends /rising /status /healthz /static。
+修復 4 個真實 bug（Go 側）：Cache-Control 全數未送出（withCache 在
+WriteHeader 後才 set）、/rising 校準漏 HAVING n≥3 且浮點分組（33% vs 6%）、
+backfill SIGTERM 誤標 complete（資料完整性等級）、重啟寫 context-canceled
+error rows。次級：NFKC 改 x/text、entity 40 cap、hostile JSON 與 TS 同步
+丟 parse error、content-filter batch pacing、INCREMENTAL clamp、ADDR 預設
+127.0.0.1:8088、stats+/tmp/heartbeat、migration 0002（DESC NULLS LAST +
+idx_entity_refs_name）、app systemd unit + backup unit env 化、parity.sh
+22 路由含 header 比對。最終 `go test` 6 套件 ok、parity 22/22。
+詳見 ptt-insight-go repo。
+
+**後續（同日午後，使用者指示）**：parity 驗證完成後，語意改以 Go-native 為準
+（boards 旗標原生 boolean/0003、LLM 輸出寬容解析、content_filter 已處理語意、
+digest prompt 淨化）。詳 PROGRESS「任務 10 後續 — Go-native 語意」。
 
 對等性教訓（PROGRESS 有記）：
 - PG 文字排序預設 collation ≠ SQLite BINARY → ORDER BY 文字一律 COLLATE "C"

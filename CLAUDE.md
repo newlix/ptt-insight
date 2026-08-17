@@ -1,5 +1,12 @@
 # PTT Insight
 
+> **⚠️ 狀態變更（2026-08-17 14:06）：production 已切換至 Go+PG 版**
+> （repo：`~/github/newlix/ptt-insight-go`；systemd：`ptt-insight-go`；
+> DB：docker `ptt-pg` postgres:18-alpine `127.0.0.1:5434`，volume `ptt_pgdata`）。
+> 本 TS repo 停止服務（`ptt-insight.service` disabled），`~/ptt-insight/ptt.db`
+> 為遷移時快照不再成長；回滾程序見 ptt-insight-go `docs/RUNBOOK-switch.md`。
+> 以下內容描述的是 TS 版的歷史架構（parity 驗證基準），部分操作段落已過時。
+
 單一 Bun process：**全站 mirror 爬蟲**（原 ptt-crawler）+ **GLM 分析 worker** + **PTT 官網 clone web**。
 資料都在一顆 `ptt.db`（SQLite WAL）。作為「有價值內容提取」系統的資料源與展示層。
 

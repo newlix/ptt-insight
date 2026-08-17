@@ -379,6 +379,109 @@ curl 三頁型取渲染輸出，與官方基準逐項比對（結構/class/顏�
   清理會連 setsid 分離的子進程一起殺（cgroup 掃除），長冷啟流程必須拆成
   多個短工具呼叫。
 
+# 任務 10 稽核修復（2026-08-17 午，獨立驗證 session）
+
+使用者「檢查是不是完整移植」→ 趁兩台 parity server 活著補測 + 三路 agent
+逐子系統比對。**結論：核心對等，但 4 個真實 bug + 運維層缺口，「port
+complete」宣稱 overstated**。
+
+- **教訓：parity harness 的涵蓋面 = 它驗證的表面**。只比 status+body 抓不到
+  response header 類回歸（Cache-Control 全部 no-op 送出）；17 checks 沒測
+  /rising → 校準邏輯漏 HAVING n≥3 + 浮點分組（首桶 n=1 雜訊 → 33% vs TS 6%）
+  一直在「17/17 pass」下藏著。修法：parity.sh 22 路由 × status+header+body。
+- **abort 路徑要逐條對照原作控制流**：TS `return`（跳過 complete/release）vs
+  Go `break`（落入 complete 區塊）。mutation check（stash 修復跑測試）揭露真相：
+  SIGTERM 後 cancelled ctx 讓誤入的 `CompleteBackfill` 寫入也靜默失敗——
+  狀態「意外正確」，屬 latent 而非 active data-loss。修復使其顯式對齊 TS 控制
+  流 + 整合測試釘死不變量（防未來 ctx 重構把意外變事故）。教訓：**修復前先
+  跑 mutation check 定 severity——「看起來會炸」和「真的會炸」差很遠**。
+- **重啟衛生**：error-row 寫入要有 ctx gate（同屬 latent：舊碼的
+  markInsightError 在 cancelled ctx 下也寫不進去）；fallback loop 同修。
+- 次級修復：NFKC 用 x/text（手刻全形映射漏 compatibility chars）、entity
+  name trim+40 cap、hostile JSON 數字欄位與 TS 同步 parse error（勿靜默存
+  空值）、content-filter rethrow 維持 30s batch pacing、INCREMENTAL clamp、
+  ADDR 預設 127.0.0.1:8088 + config 死 PORT 移除、stats+/tmp/heartbeat 補齊、
+  migration 0002（DESC NULLS LAST×2 + idx_entity_refs_name）、app systemd
+  unit + backup unit env 化、digest prompt null/NULL 對齊、app.css go:embed
+  （binary 自足，不依賴 CWD）。
+- 驗證：go test -count=1 6 套件 ok（+9 測試：abort/complete 整合、cacheFor
+  表、header emission regression、normEntity NFKC、wrong-typed JSON、entity
+  cap）；parity 22/22；live header 實測 4 路由全送出。切換 runbook 落地
+  （ptt-insight-go docs/RUNBOOK-switch.md），SPEC 10.8 的 runbook 宣稱不再虛。
+
+# 任務 10 後續 — Go-native 語意（2026-08-17 午後，使用者指示）
+
+使用者：「不必刻意相容 TypeScript 的資料格式，還沒正式上線，完全可以用最適合
+Go 的寫法」→ 移除上一輪為了 TS 對等而加的扭曲：
+
+- **Schema**：boards 三個 SQLite-mirror INTEGER 布林（is_hot/
+  backfill_complete/backfill_recent_complete）→ 原生 `boolean`（migration
+  0003；兩個 partial index 述詞同步 `WHERE NOT backfill_complete`）。
+  scanBoard 不再掃 int64 暫存轉 `== 1`；全部查詢改布林述詞。
+- **ParseAnalysis 回寬容**：上一輪模仿 TS `.trim()` 丟例外（wrong-typed
+  欄位 → parse error → 重燒一次 LLM）是錯的方向——次要欄位靜默降級為空
+  值即可，唯一硬契約是 tldr 非空。content_filter 回「已處理」語意
+  （fallback loop 擁有重試，不算 batch 失敗）。
+- digest prompt net_count 缺值渲染 `?`（與 sentiment/controversy 一致），
+  不再硬抄 TS 的 `null` 字串。註解全數以自身理由站立（移除 "TS parity" 措辭）。
+- **Importer**：boards 三欄 INTEGER 0/1 → bool 映射（truthy()）；round-trip
+  實證：scratch DB（template 複製 schema）匯入 13,283 boards/320,415
+  articles/10.9M pushes，`WHERE is_hot` 計數與 SQLite 全等（178/13105/1）。
+- 教訓 ×2：
+  1. **「對等」是移植鷹架，不是終局設計**——parity 驗完後該回頭問「這行為
+     在新語言裡本來會怎麼寫」，把鷹架一起拆掉（嚴格拋錯浪費 LLM call、
+     int-mirror 布林讓每個 scan 帶轉換層）。
+  2. **並行套件對同一 DB 跑 Migrate 會 race**（crawl/db 測試同時 apply 0003，
+     一邊 ALTER 成功一邊撞 boolean<>integer）——共用測試 DB 的 migrate 需要
+     advisory lock（未修，重跑即過；上線前該補）。
+
+# 任務 10 正式切換 — Go+PG 上線 :8088（2026-08-17 14:06）
+
+使用者「現在就正式遷移 + 推薦 docker 或原生」。**推薦並採用 Docker**
+（postgres:18-alpine 釘版本）：CachyOS rolling 的 pacman 升級會跳 PG 大版本
+而原生 cluster 會掛；Docker 把升級變成刻意決定 + 未來 VPS compose 原封搬移。
+dev `ptt_dev` 留原生 5432，prod `127.0.0.1:5434`（5433 被 trace 專案占用）。
+
+- **PG18 image 坑**：volume 必須掛 `/var/lib/postgresql`（不是 …/data）—
+  18+ 改用 major-version 子目錄佈局，掛錯直接 unhealthy。
+- 匯入 4m22s（15.7M pushes），逐表指紋全對 + is_hot 178=178（bool 映射）、
+  eligible pool 手算 71,599 = healthz total 完全一致。
+- **上線即抓到真 concurrency bug**：三個 backfill worker 同時 claim 到
+  SENIORHIGH（journal 三連「backfill start: SENIORHIGH」）— BEGIN/SELECT/UPDATE
+  在 PG read-committed 下兩個 tx 可選到同一板；TS 時代 bun:sqlite 單 writer
+  天然序列化，這 bug 在 port 中被「並發化」引入而不自知。修法：單語句
+  `UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED) RETURNING`
+  （PG queue 標準型）+ 順序 claim 語意測試。教訓：**移植到真正並發的環境，
+  所有「先查後寫」的 claim/lock 路徑都要以併發眼重審一遍**——單 writer
+  掩蓋的 race 不會在 parity 測試裡現形（parity 只跑 web）。
+- `/tmp/heartbeat` 停在 11:15 的排查：TS 服務跑 root 留下 root-owned 檔，
+  Go 以 ptt 跑寫不進去（`os.WriteFile` 錯誤被吞）— 刪舊檔即癒。服務換
+  user 時要盤點既有 runtime 檔案的擁有者。
+- 上線驗證：healthz ok、stats 每分鐘、incremental 2 分鐘 +685 文/+22.6K 推、
+  Cache-Control 送出、worker 依 off-peak 暫停（週一 14:00，18:00 恢復）、
+  backup timer 04:40（docker exec pg_dump）。parity 殘留行程（:8099/:8090/:8077）清除。
+- 環境：RATE_LIMIT 回 5（9.21 待辦收尾）；LLM/fallback/worker 參數原名沿用。
+- dev ptt_dev（原生）保留給 `go test`；prod 真相源 = docker `ptt_pgdata` volume。
+
+# 任務 10 切換前置 — TS 服務全面停止（2026-08-17 13:48）
+
+使用者指示「把 TS worker 停下來，留下 DB 準備遷移」。現場發現：worker/crawler
+其實 11:16 起 already off（RUN_WORKER=0/RUN_CRAWLER=0），服務只剩 web；
+真正要做的是——
+
+- `systemctl stop + disable` ptt-insight 與 **backup timer**（暫停窗模式的
+  ExecStartPost 會在 04:30 備份後把服務**復活**——留著 timer 等於沒停）。
+- 殺掉 2 個 08-16 03:20 refuter 殘留 bun 行程（/tmp/refute.db、web-only、
+  非 systemd 管，1.5 天沒人發現——孤兒行程要 `pgrep -af bun` 全列，不能只
+  看 systemctl）。
+- DB 定妝：`wal_checkpoint(TRUNCATE)`（主檔自足 2.77GB）、quick_check ok、
+  快照 `backups/ptt-pre-migration-20260817.db`（473,416 articles 驗證）。
+  指紋：boards 13,283 / articles 473,416 / pushes 15,721,119 /
+  insights 4,104 / digests 53。**注意：比 04:30 parity snapshot 多 15.3 萬
+  文章**（晨間 backfill 提速的成果）——正式遷移要重跑 importer（冪等，
+  TRUNCATE+COPY），不能用 ptt_dev 現栽的舊資料。
+- 回滾：`sudo systemctl enable --now ptt-insight ptt-insight-backup.timer`。
+
 # 任務 9.21 — 暫時提速收尾 backfill（2026-08-17 08:02）
 
 - `RATE_LIMIT` 5→20（backfill cap 自動 =60% → 12 req/s），重啟即生效（單一 env 值）。
