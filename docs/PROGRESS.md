@@ -362,3 +362,11 @@ curl 三頁型取渲染輸出，與官方基準逐項比對（結構/class/顏�
   的重分析+滿載新文…實際是 24h 2,941 篇×6.85≈20K/日=140K/週 貼頂）。**結論：
   pre-launch c=3 就是正確配置**，上市時 MIN_AGE=0 才是真正消化點。
 - 錯誤率 7%（9/123，4 timeout、3 max_tokens、2 parse）全走 1h 冷卻自動重試。
+
+# 任務 9.21 — 暫時提速收尾 backfill（2026-08-17 08:02）
+
+- `RATE_LIMIT` 5→20（backfill cap 自動 =60% → 12 req/s），重啟即生效（單一 env 值）。
+- 實測 36.5K 篇/hr（4.7×），剩餘 ~110K → **預計 ~3 小時（今日上午）backfill 全完**。
+- PTT 端 0 次 403/429（觀察窗內）。
+- **待辦：backfill 完成後調回 `RATE_LIMIT=5`**——steady-state 只跑 incremental，
+  高速率沒用處；常態 20 req/s 對 PTT 是無謂的封鎖風險。

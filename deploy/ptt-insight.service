@@ -1,0 +1,22 @@
+[Unit]
+Description=PTT Insight — crawler + GLM analysis + web (ptt.db)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=ptt
+Group=ptt
+WorkingDirectory=/opt/ptt-insight
+EnvironmentFile=/etc/ptt-insight.env
+ExecStart=/usr/local/bin/bun src/index.ts
+
+KillSignal=SIGTERM
+TimeoutStopSec=15
+Restart=on-failure
+RestartSec=15
+
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
