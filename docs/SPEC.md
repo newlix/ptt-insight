@@ -1,5 +1,15 @@
 # 任務 10 — Go + PostgreSQL 版本（2026-08-17 起）
 
+**全部完成（10.1–10.8，2026-08-17）。** Go+PG 版與 TS+SQLite 版行為對等：
+17/17 路由逐位元組相同（同快照資料、相對時間正規化後 diff 為零）。
+**未切換**：TS 版仍為 prod 真相源；Go 版 live 爬取/LLM 未實跑（避免雙跑重複
+爬 PT 與重複燒 credit），切換 = RUNBOOK 步驟（TS 停 → 匯入 → Go 上 :8088）。
+
+對等性教訓（PROGRESS 有記）：
+- PG 文字排序預設 collation ≠ SQLite BINARY → ORDER BY 文字一律 COLLATE "C"
+- SQLite GROUP BY 隱含序：/boards tie = id ASC、/search tie = group keys 全序
+- cheerio find() 只搜子樹；x/net/html 手工遍歷時「自身也算 match」是兩個 bug 來源
+
 背景：TS 版（已完成 18+ 卡）為基準實作。Go 版為長期維護性投資（編譯期保證/單
 binary/生態穩定），行為對等是驗收標準（同 URL 同 HTML 語義同查詢結果）。
 

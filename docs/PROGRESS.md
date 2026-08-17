@@ -363,6 +363,18 @@ curl 三頁型取渲染輸出，與官方基準逐項比對（結構/class/顏�
   pre-launch c=3 就是正確配置**，上市時 MIN_AGE=0 才是真正消化點。
 - 錯誤率 7%（9/123，4 timeout、3 max_tokens、2 parse）全走 1h 冷卻自動重試。
 
+# 任務 10 — Go+PG 完整移植（2026-08-17，全 8 卡完成）
+
+- 5,187 行 TS → Go ~4,000 行（views/repo/crawl/insight/web/main），pgx v5。
+- **17/17 路由逐位元組 parity**（parity.sh：TS snapshot :8099 vs Go PG :8090）。
+- 對等性三教訓：PG collation ≠ SQLite BINARY（文字 ORDER BY 加 COLLATE "C"）；
+  SQLite GROUP BY 隱含序 = group keys（/boards tie 是 id ASC）；x/net/html 手工
+  遍歷的「自身 match」陷阱（title a、nuser span 兩個 bug 都是它）。
+- Go 測試 4 套件 ok（真實 fixture 842 推文章解析、敵意 LLM JSON、limiter、
+  nrec/vanish 語意）。爬蟲/worker **未 live 跑**（雙跑=重複爬+重複燒 credit），
+  切換日按 RUNBOOK-vps.md 驗證。
+- 匯入器 cmd/importfromsqlite：10 表 TRUNCATE+COPY 2m18s、計數對齊、序列重置。
+
 # 任務 9.21 — 暫時提速收尾 backfill（2026-08-17 08:02）
 
 - `RATE_LIMIT` 5→20（backfill cap 自動 =60% → 12 req/s），重啟即生效（單一 env 值）。
